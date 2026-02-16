@@ -9,13 +9,18 @@ import {
   AlertTriangle,
   RefreshCw,
   LogOut,
+  Timer,
 } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import {
   useStationList,
   getSavedCredentials,
   clearCredentials,
+  getRefreshSeconds,
+  saveRefreshSeconds,
 } from "@/lib/solis-client"
 
 export function SettingsView() {
@@ -24,6 +29,8 @@ export function SettingsView() {
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<"success" | "error" | null>(null)
   const creds = getSavedCredentials()
+  const [refreshSeconds, setRefreshSeconds] = useState(() => getRefreshSeconds())
+  const [refreshSaved, setRefreshSaved] = useState(false)
 
   async function handleTestConnection() {
     setTesting(true)
@@ -136,6 +143,95 @@ export function SettingsView() {
         </CardContent>
       </Card>
 
+      {/* Data Refresh */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base font-semibold text-card-foreground">
+            <Timer className="h-4 w-4 text-primary" />
+            Data Refresh Interval
+          </CardTitle>
+          <CardDescription>
+            How often the dashboard fetches new data from SolisCloud.
+            Solis updates data every ~5 minutes, so shorter intervals may not yield new values.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div className="flex-1 space-y-1.5">
+              <Label htmlFor="refresh-seconds" className="text-card-foreground">
+                Refresh every
+              </Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="refresh-seconds"
+                  type="number"
+                  min={10}
+                  max={3600}
+                  step={10}
+                  value={refreshSeconds}
+                  onChange={(e) => {
+                    setRefreshSeconds(parseInt(e.target.value, 10) || 60)
+                    setRefreshSaved(false)
+                  }}
+                  className="w-28 font-mono tabular-nums"
+                />
+                <span className="text-sm text-muted-foreground">seconds</span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Min 10s. Currently: {refreshSeconds >= 60 ? `${Math.floor(refreshSeconds / 60)}m${refreshSeconds % 60 ? ` ${refreshSeconds % 60}s` : ""}` : `${refreshSeconds}s`}
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <Button
+                size="sm"
+                onClick={() => {
+                  const clamped = Math.max(10, Math.min(3600, refreshSeconds))
+                  setRefreshSeconds(clamped)
+                  saveRefreshSeconds(clamped)
+                  setRefreshSaved(true)
+                  setTimeout(() => setRefreshSaved(false), 3000)
+                }}
+              >
+                Save
+              </Button>
+              {refreshSaved && (
+                <span className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
+                  <CheckCircle2 className="h-3 w-3" />
+                  Saved -- reload pages to apply
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {[
+              { label: "30s", value: 30 },
+              { label: "1 min", value: 60 },
+              { label: "2 min", value: 120 },
+              { label: "5 min", value: 300 },
+              { label: "10 min", value: 600 },
+            ].map((preset) => (
+              <button
+                key={preset.value}
+                type="button"
+                onClick={() => {
+                  setRefreshSeconds(preset.value)
+                  saveRefreshSeconds(preset.value)
+                  setRefreshSaved(true)
+                  setTimeout(() => setRefreshSaved(false), 3000)
+                }}
+                className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
+                  refreshSeconds === preset.value
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border text-muted-foreground hover:border-primary/50 hover:text-card-foreground"
+                }`}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Getting Credentials */}
       <Card>
         <CardHeader>
@@ -226,7 +322,7 @@ export function SettingsView() {
               SolisCloud Monitor &middot; Built on the SolisCloud Platform API v2.0.3
             </p>
             <p className="mt-1">
-              Data refreshes automatically every 5 minutes, matching the SolisCloud update frequency.
+              Data refreshes automatically based on your configured interval. SolisCloud updates data every ~5 minutes.
             </p>
           </div>
         </CardContent>

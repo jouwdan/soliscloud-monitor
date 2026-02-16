@@ -26,6 +26,28 @@ export function clearCredentials() {
   localStorage.removeItem(STORAGE_KEY_SECRET)
 }
 
+// --------- Refresh interval helpers (localStorage) ----------
+
+const STORAGE_KEY_REFRESH = "solis_refresh_seconds"
+const DEFAULT_REFRESH_SECONDS = 300
+
+export function getRefreshSeconds(): number {
+  if (typeof window === "undefined") return DEFAULT_REFRESH_SECONDS
+  const stored = localStorage.getItem(STORAGE_KEY_REFRESH)
+  if (!stored) return DEFAULT_REFRESH_SECONDS
+  const parsed = parseInt(stored, 10)
+  if (isNaN(parsed) || parsed < 10) return DEFAULT_REFRESH_SECONDS
+  return parsed
+}
+
+export function saveRefreshSeconds(seconds: number) {
+  localStorage.setItem(STORAGE_KEY_REFRESH, String(Math.max(10, seconds)))
+}
+
+export function getRefreshMs(): number {
+  return getRefreshSeconds() * 1000
+}
+
 // ---------- Generic fetcher ----------
 
 async function solisFetcher<T = unknown>([endpoint, body]: [
@@ -66,9 +88,9 @@ export function useSolisApi<T = unknown>(
     endpoint ? [endpoint, body] : null,
     solisFetcher,
     {
-      refreshInterval: options.refreshInterval ?? 300000,
+      refreshInterval: options.refreshInterval ?? getRefreshMs(),
       revalidateOnFocus: options.revalidateOnFocus ?? false,
-      dedupingInterval: 10000,
+      dedupingInterval: Math.min(10000, getRefreshMs()),
     }
   )
 }
