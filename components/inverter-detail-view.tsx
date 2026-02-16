@@ -24,6 +24,7 @@ import {
 } from "lucide-react"
 import { useInverterDetail, useInverterDay, useInverterMonth, useInverterYear } from "@/lib/solis-client"
 import { MetricCard } from "@/components/metric-card"
+import { PowerFlow } from "@/components/power-flow"
 import { StatusBadge } from "@/components/status-badge"
 import { PowerChart } from "@/components/power-chart"
 import { EnergyBarChart } from "@/components/energy-bar-chart"
@@ -141,6 +142,18 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
               </p>
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Power Flow Diagram */}
+      <Card>
+        <CardHeader className="pb-0">
+          <CardTitle className="text-base font-semibold text-card-foreground">
+            Live Power Flow
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-2">
+          <PowerFlow detail={detail} />
         </CardContent>
       </Card>
 
