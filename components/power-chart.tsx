@@ -78,8 +78,11 @@ function bucketTo5Min(points: RawPoint[]): (Omit<RawPoint, "ts"> & { time: strin
     })
 }
 
+const ALL_KEYS = Object.keys(SERIES) as SeriesKey[]
+
 export function PowerChart({ data }: PowerChartProps) {
-  const [hidden, setHidden] = useState<Set<SeriesKey>>(new Set())
+  // null = show all, string = solo that one series
+  const [solo, setSolo] = useState<SeriesKey | null>(null)
 
   if (!data || data.length === 0) {
     return (
@@ -89,14 +92,11 @@ export function PowerChart({ data }: PowerChartProps) {
     )
   }
 
-  const toggle = (key: SeriesKey) => {
-    setHidden((prev) => {
-      const next = new Set(prev)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
-      return next
-    })
+  const handleClick = (key: SeriesKey) => {
+    setSolo((prev) => (prev === key ? null : key))
   }
+
+  const isVisible = (key: SeriesKey) => solo === null || solo === key
 
   // Sort, normalise to kW, then bucket into 5-min averages
   // Use pacPec as the shared fallback precision for all power fields in day entries,
@@ -131,23 +131,35 @@ export function PowerChart({ data }: PowerChartProps) {
 
   return (
     <div className="space-y-2">
-      {/* Custom legend with toggle */}
+      {/* Clickable legend — click to solo, click again to show all */}
       <div className="flex flex-wrap gap-x-3 gap-y-1 px-1">
-        {(Object.entries(SERIES) as [SeriesKey, (typeof SERIES)[SeriesKey]][]).map(([key, s]) => (
+        {(Object.entries(SERIES) as [SeriesKey, (typeof SERIES)[SeriesKey]][]).map(([key, s]) => {
+          const active = isVisible(key)
+          return (
+            <button
+              key={key}
+              type="button"
+              onClick={() => handleClick(key)}
+              className="flex items-center gap-1.5 text-[10px] transition-opacity"
+              style={{ opacity: active ? 1 : 0.3 }}
+            >
+              <span
+                className="inline-block h-2 w-2 rounded-full"
+                style={{ backgroundColor: s.color }}
+              />
+              <span className={active ? "text-foreground" : "text-muted-foreground"}>{s.label}</span>
+            </button>
+          )
+        })}
+        {solo !== null && (
           <button
-            key={key}
             type="button"
-            onClick={() => toggle(key)}
-            className="flex items-center gap-1.5 text-[10px] transition-opacity"
-            style={{ opacity: hidden.has(key) ? 0.35 : 1 }}
+            onClick={() => setSolo(null)}
+            className="ml-1 text-[10px] text-muted-foreground underline underline-offset-2 transition-colors hover:text-foreground"
           >
-            <span
-              className="inline-block h-2 w-2 rounded-full"
-              style={{ backgroundColor: s.color }}
-            />
-            <span className="text-muted-foreground">{s.label}</span>
+            Show all
           </button>
-        ))}
+        )}
       </div>
 
       <div className="h-56 w-full">
@@ -165,9 +177,8 @@ export function PowerChart({ data }: PowerChartProps) {
               tick={{ fontSize: 10, fill: "hsl(220, 10%, 50%)" }}
               tickLine={false}
               axisLine={false}
-              width={40}
-              tickFormatter={(v) => `${v}`}
-              label={{ value: "kW", position: "insideTopLeft", offset: -5, style: { fontSize: 9, fill: "hsl(220, 10%, 50%)" } }}
+              width={44}
+              unit=" kW"
             />
             <Tooltip
               contentStyle={{
@@ -189,9 +200,9 @@ export function PowerChart({ data }: PowerChartProps) {
                 type="monotone"
                 dataKey={key}
                 stroke={s.color}
-                strokeWidth={1.5}
+                strokeWidth={solo === key ? 2 : 1.5}
                 dot={false}
-                hide={hidden.has(key)}
+                hide={!isVisible(key)}
               />
             ))}
           </LineChart>
