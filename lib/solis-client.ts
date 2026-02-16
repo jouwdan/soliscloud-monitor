@@ -193,10 +193,63 @@ export interface InverterDetail {
   familyLoadPowerStr: string
   homeLoadTodayEnergy: number
   homeLoadTodayEnergyStr: string
+  homeLoadMonthEnergy: number
+  homeLoadMonthEnergyStr: string
+  homeLoadYearEnergy: number
+  homeLoadYearEnergyStr: string
   homeLoadTotalEnergy: number
   homeLoadTotalEnergyStr: string
+  homeLoadYesterdayEnergy: number
+  homeLoadYesterdayEnergyStr: string
+  familyLoadPercent: number
+  totalLoadPower: number
+  totalLoadPowerStr: string
+  bypassLoadPower: number
+  bypassLoadPowerStr: string
+  backupTodayEnergy: number
+  backupTodayEnergyStr: string
+  backupTotalEnergy: number
+  backupTotalEnergyStr: string
+  homeGridTodayEnergy: number
+  homeGridTodayEnergyStr: string
+  homeGridMonthEnergy: number
+  homeGridMonthEnergyStr: string
+  homeGridYearEnergy: number
+  homeGridYearEnergyStr: string
+  homeGridTotalEnergy: number
+  homeGridTotalEnergyStr: string
+  gridPurchasedMonthEnergy: number
+  gridPurchasedMonthEnergyStr: string
+  gridPurchasedYearEnergy: number
+  gridPurchasedYearEnergyStr: string
+  gridSellMonthEnergy: number
+  gridSellMonthEnergyStr: string
+  gridSellYearEnergy: number
+  gridSellYearEnergyStr: string
+  batteryMonthChargeEnergy: number
+  batteryMonthChargeEnergyStr: string
+  batteryYearChargeEnergy: number
+  batteryYearChargeEnergyStr: string
+  batteryMonthDischargeEnergy: number
+  batteryMonthDischargeEnergyStr: string
+  batteryYearDischargeEnergy: number
+  batteryYearDischargeEnergyStr: string
   pSum: number
   pSumStr: string
+  psumCal: number
+  psumCalStr: string
+  reactivePower: number
+  reactivePowerStr: string
+  apparentPower: number
+  apparentPowerStr: string
+  dcPac: number
+  dcPacStr: string
+  generatorPower: number
+  generatorPowerStr: string
+  generatorTodayEnergy: number
+  generatorTodayEnergyStr: string
+  generatorTotalEnergy: number
+  generatorTotalEnergyStr: string
   model: string
   type: number
   name: string

@@ -16,6 +16,11 @@ import {
   Clock,
   AlertTriangle,
   Info,
+  Leaf,
+  PlugZap,
+  ShieldCheck,
+  Activity,
+  Gauge,
 } from "lucide-react"
 import { useInverterDetail, useInverterDay, useInverterMonth, useInverterYear } from "@/lib/solis-client"
 import { MetricCard } from "@/components/metric-card"
@@ -167,7 +172,7 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
         />
       </div>
 
-      {/* Battery & Grid */}
+      {/* Battery & Grid Real-time */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard
           title="Battery Power"
@@ -184,18 +189,245 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
           description={`Today: ${detail.homeLoadTodayEnergy?.toFixed(1) || 0} ${detail.homeLoadTodayEnergyStr || "kWh"}`}
         />
         <MetricCard
-          title="Grid Import Today"
-          value={detail.gridPurchasedTodayEnergy || 0}
-          unit={detail.gridPurchasedTodayEnergyStr || "kWh"}
-          icon={ArrowDownToLine}
+          title="Grid Power"
+          value={Math.abs(detail.pSum || 0)}
+          unit={detail.pSumStr || "kW"}
+          icon={(detail.pSum || 0) >= 0 ? ArrowDownToLine : ArrowUpFromLine}
+          description={(detail.pSum || 0) >= 0 ? "Importing from grid" : "Exporting to grid"}
         />
         <MetricCard
-          title="Grid Export Today"
-          value={detail.gridSellTodayEnergy || 0}
-          unit={detail.gridSellTodayEnergyStr || "kWh"}
-          icon={ArrowUpFromLine}
+          title="DC Input Total"
+          value={detail.dcPac || 0}
+          unit={detail.dcPacStr || "W"}
+          icon={Zap}
+          description={detail.bypassLoadPower ? `Bypass: ${detail.bypassLoadPower.toFixed(2)} ${detail.bypassLoadPowerStr || "kW"}` : undefined}
         />
       </div>
+
+      {/* Self-Reliance & Energy Flow */}
+      {detail.type === 2 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base font-semibold text-card-foreground">
+              <Leaf className="h-4 w-4 text-emerald-500" />
+              Self-Reliance & Energy Flow
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            {/* Self-consumption / Self-reliance gauges */}
+            {(() => {
+              const produced = detail.eToday || 0
+              const exported = detail.gridSellTodayEnergy || 0
+              const imported = detail.gridPurchasedTodayEnergy || 0
+              const consumed = detail.homeLoadTodayEnergy || 0
+
+              const selfConsumed = Math.max(0, produced - exported)
+              const selfConsumptionRate = produced > 0
+                ? Math.min(100, (selfConsumed / produced) * 100)
+                : 0
+              const selfRelianceRate = consumed > 0
+                ? Math.min(100, (selfConsumed / consumed) * 100)
+                : 0
+
+              return (
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="rounded-lg border p-4 text-center">
+                    <ShieldCheck className="mx-auto mb-2 h-5 w-5 text-emerald-500" />
+                    <p className="text-xs font-medium text-muted-foreground">Self-Reliance</p>
+                    <p className="mt-1 text-2xl font-bold tabular-nums text-card-foreground">
+                      {selfRelianceRate.toFixed(0)}%
+                    </p>
+                    <div className="mt-2 h-2 rounded-full bg-muted">
+                      <div
+                        className="h-2 rounded-full bg-emerald-500 transition-all"
+                        style={{ width: `${selfRelianceRate}%` }}
+                      />
+                    </div>
+                    <p className="mt-1.5 text-xs text-muted-foreground">
+                      of load met by solar
+                    </p>
+                  </div>
+
+                  <div className="rounded-lg border p-4 text-center">
+                    <Sun className="mx-auto mb-2 h-5 w-5 text-primary" />
+                    <p className="text-xs font-medium text-muted-foreground">Self-Consumption</p>
+                    <p className="mt-1 text-2xl font-bold tabular-nums text-card-foreground">
+                      {selfConsumptionRate.toFixed(0)}%
+                    </p>
+                    <div className="mt-2 h-2 rounded-full bg-muted">
+                      <div
+                        className="h-2 rounded-full bg-primary transition-all"
+                        style={{ width: `${selfConsumptionRate}%` }}
+                      />
+                    </div>
+                    <p className="mt-1.5 text-xs text-muted-foreground">
+                      of production used directly
+                    </p>
+                  </div>
+
+                  <div className="rounded-lg border p-4 text-center">
+                    <Activity className="mx-auto mb-2 h-5 w-5 text-blue-500" />
+                    <p className="text-xs font-medium text-muted-foreground">Grid Power</p>
+                    <p className="mt-1 text-2xl font-bold tabular-nums text-card-foreground">
+                      {Math.abs(detail.pSum || 0).toFixed(2)}
+                    </p>
+                    <p className="text-sm text-muted-foreground">{detail.pSumStr || "kW"}</p>
+                    <p className="mt-1 text-xs font-medium" style={{ color: (detail.pSum || 0) >= 0 ? "hsl(var(--chart-5))" : "hsl(var(--chart-4))" }}>
+                      {(detail.pSum || 0) >= 0 ? "Importing" : "Exporting"}
+                    </p>
+                  </div>
+
+                  <div className="rounded-lg border p-4 text-center">
+                    <Gauge className="mx-auto mb-2 h-5 w-5 text-muted-foreground" />
+                    <p className="text-xs font-medium text-muted-foreground">Home Load</p>
+                    <p className="mt-1 text-2xl font-bold tabular-nums text-card-foreground">
+                      {(detail.familyLoadPower || 0).toFixed(2)}
+                    </p>
+                    <p className="text-sm text-muted-foreground">{detail.familyLoadPowerStr || "kW"}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {detail.familyLoadPercent ? `${detail.familyLoadPercent}% capacity` : "Current draw"}
+                    </p>
+                  </div>
+                </div>
+              )
+            })()}
+
+            {/* Detailed energy breakdown table */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/50">
+                    <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Metric</th>
+                    <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">Today</th>
+                    <th className="hidden px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground sm:table-cell">Month</th>
+                    <th className="hidden px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground md:table-cell">Year</th>
+                    <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">Total</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  <tr>
+                    <td className="flex items-center gap-2 px-3 py-2.5 font-medium text-card-foreground">
+                      <Sun className="h-3.5 w-3.5 text-primary" /> Production
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-card-foreground">
+                      {detail.eToday?.toFixed(1)} <span className="text-muted-foreground">{detail.eTodayStr}</span>
+                    </td>
+                    <td className="hidden px-3 py-2.5 text-right tabular-nums text-card-foreground sm:table-cell">
+                      {detail.eMonth?.toFixed(1)} <span className="text-muted-foreground">{detail.eMonthStr}</span>
+                    </td>
+                    <td className="hidden px-3 py-2.5 text-right tabular-nums text-card-foreground md:table-cell">
+                      {detail.eYear?.toFixed(1)} <span className="text-muted-foreground">{detail.eYearStr}</span>
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-card-foreground">
+                      {detail.eTotal?.toFixed(1)} <span className="text-muted-foreground">{detail.eTotalStr}</span>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="flex items-center gap-2 px-3 py-2.5 font-medium text-card-foreground">
+                      <Home className="h-3.5 w-3.5 text-muted-foreground" /> Consumption
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-card-foreground">
+                      {detail.homeLoadTodayEnergy?.toFixed(1)} <span className="text-muted-foreground">{detail.homeLoadTodayEnergyStr}</span>
+                    </td>
+                    <td className="hidden px-3 py-2.5 text-right tabular-nums text-card-foreground sm:table-cell">
+                      {(detail.homeLoadMonthEnergy ?? 0).toFixed(1)} <span className="text-muted-foreground">{detail.homeLoadMonthEnergyStr || "kWh"}</span>
+                    </td>
+                    <td className="hidden px-3 py-2.5 text-right tabular-nums text-card-foreground md:table-cell">
+                      {(detail.homeLoadYearEnergy ?? 0).toFixed(1)} <span className="text-muted-foreground">{detail.homeLoadYearEnergyStr || "kWh"}</span>
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-card-foreground">
+                      {detail.homeLoadTotalEnergy?.toFixed(1)} <span className="text-muted-foreground">{detail.homeLoadTotalEnergyStr}</span>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="flex items-center gap-2 px-3 py-2.5 font-medium text-card-foreground">
+                      <ArrowDownToLine className="h-3.5 w-3.5 text-red-500" /> Grid Import
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-card-foreground">
+                      {detail.gridPurchasedTodayEnergy?.toFixed(1)} <span className="text-muted-foreground">{detail.gridPurchasedTodayEnergyStr}</span>
+                    </td>
+                    <td className="hidden px-3 py-2.5 text-right tabular-nums text-card-foreground sm:table-cell">
+                      {(detail.gridPurchasedMonthEnergy ?? 0).toFixed(1)} <span className="text-muted-foreground">{detail.gridPurchasedMonthEnergyStr || "kWh"}</span>
+                    </td>
+                    <td className="hidden px-3 py-2.5 text-right tabular-nums text-card-foreground md:table-cell">
+                      {(detail.gridPurchasedYearEnergy ?? 0).toFixed(1)} <span className="text-muted-foreground">{detail.gridPurchasedYearEnergyStr || "kWh"}</span>
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-card-foreground">
+                      {detail.gridPurchasedTotalEnergy?.toFixed(1)} <span className="text-muted-foreground">{detail.gridPurchasedTotalEnergyStr}</span>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="flex items-center gap-2 px-3 py-2.5 font-medium text-card-foreground">
+                      <ArrowUpFromLine className="h-3.5 w-3.5 text-emerald-500" /> Grid Export
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-card-foreground">
+                      {detail.gridSellTodayEnergy?.toFixed(1)} <span className="text-muted-foreground">{detail.gridSellTodayEnergyStr}</span>
+                    </td>
+                    <td className="hidden px-3 py-2.5 text-right tabular-nums text-card-foreground sm:table-cell">
+                      {(detail.gridSellMonthEnergy ?? 0).toFixed(1)} <span className="text-muted-foreground">{detail.gridSellMonthEnergyStr || "kWh"}</span>
+                    </td>
+                    <td className="hidden px-3 py-2.5 text-right tabular-nums text-card-foreground md:table-cell">
+                      {(detail.gridSellYearEnergy ?? 0).toFixed(1)} <span className="text-muted-foreground">{detail.gridSellYearEnergyStr || "kWh"}</span>
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-card-foreground">
+                      {detail.gridSellTotalEnergy?.toFixed(1)} <span className="text-muted-foreground">{detail.gridSellTotalEnergyStr}</span>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="flex items-center gap-2 px-3 py-2.5 font-medium text-card-foreground">
+                      <BatteryCharging className="h-3.5 w-3.5 text-primary" /> Battery Charge
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-card-foreground">
+                      {detail.batteryTodayChargeEnergy?.toFixed(1)} <span className="text-muted-foreground">{detail.batteryTodayChargeEnergyStr}</span>
+                    </td>
+                    <td className="hidden px-3 py-2.5 text-right tabular-nums text-card-foreground sm:table-cell">
+                      {(detail.batteryMonthChargeEnergy ?? 0).toFixed(1)} <span className="text-muted-foreground">{detail.batteryMonthChargeEnergyStr || "kWh"}</span>
+                    </td>
+                    <td className="hidden px-3 py-2.5 text-right tabular-nums text-card-foreground md:table-cell">
+                      {(detail.batteryYearChargeEnergy ?? 0).toFixed(1)} <span className="text-muted-foreground">{detail.batteryYearChargeEnergyStr || "kWh"}</span>
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-card-foreground">
+                      {detail.batteryTotalChargeEnergy?.toFixed(1)} <span className="text-muted-foreground">{detail.batteryTotalChargeEnergyStr}</span>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="flex items-center gap-2 px-3 py-2.5 font-medium text-card-foreground">
+                      <Battery className="h-3.5 w-3.5 text-primary" /> Battery Discharge
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-card-foreground">
+                      {detail.batteryTodayDischargeEnergy?.toFixed(1)} <span className="text-muted-foreground">{detail.batteryTodayDischargeEnergyStr}</span>
+                    </td>
+                    <td className="hidden px-3 py-2.5 text-right tabular-nums text-card-foreground sm:table-cell">
+                      {(detail.batteryMonthDischargeEnergy ?? 0).toFixed(1)} <span className="text-muted-foreground">{detail.batteryMonthDischargeEnergyStr || "kWh"}</span>
+                    </td>
+                    <td className="hidden px-3 py-2.5 text-right tabular-nums text-card-foreground md:table-cell">
+                      {(detail.batteryYearDischargeEnergy ?? 0).toFixed(1)} <span className="text-muted-foreground">{detail.batteryYearDischargeEnergyStr || "kWh"}</span>
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-card-foreground">
+                      {detail.batteryTotalDischargeEnergy?.toFixed(1)} <span className="text-muted-foreground">{detail.batteryTotalDischargeEnergyStr}</span>
+                    </td>
+                  </tr>
+                  {(detail.backupTodayEnergy || detail.backupTotalEnergy) ? (
+                    <tr>
+                      <td className="flex items-center gap-2 px-3 py-2.5 font-medium text-card-foreground">
+                        <PlugZap className="h-3.5 w-3.5 text-muted-foreground" /> Backup Load
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-card-foreground">
+                        {detail.backupTodayEnergy?.toFixed(1)} <span className="text-muted-foreground">{detail.backupTodayEnergyStr}</span>
+                      </td>
+                      <td className="hidden px-3 py-2.5 text-right tabular-nums text-muted-foreground sm:table-cell">--</td>
+                      <td className="hidden px-3 py-2.5 text-right tabular-nums text-muted-foreground md:table-cell">--</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-card-foreground">
+                        {detail.backupTotalEnergy?.toFixed(1)} <span className="text-muted-foreground">{detail.backupTotalEnergyStr}</span>
+                      </td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* DC/AC Readings */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
