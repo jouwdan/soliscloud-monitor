@@ -98,11 +98,11 @@ function analyzeLoadShifting(
       if (diff > 0 && diff < 1) intervalHours = diff
     }
 
-    // Normalise all power readings to kW
-    const gridPower = toKW(entry.pSum, entry.pSumStr)
-    const battPower = toKW(entry.batteryPower, entry.batteryPowerStr)
-    const solarPower = toKW(entry.pac, entry.pacStr)
-    const loadPower = toKW(entry.familyLoadPower, entry.familyLoadPowerStr)
+    // Normalise all power readings to kW (pass Pec multiplier when available)
+    const gridPower = toKW(entry.pSum, entry.pSumStr, entry.psumCalPec ?? entry.pSumPec)
+    const battPower = toKW(entry.batteryPower, entry.batteryPowerStr, entry.batteryPowerPec)
+    const solarPower = toKW(entry.pac, entry.pacStr, entry.pacPec)
+    const loadPower = toKW(entry.familyLoadPower, entry.familyLoadPowerStr, entry.familyLoadPowerPec)
 
     // Accumulate per-tariff-group
     const rate = getRateForHour(hour, tariffGroups)

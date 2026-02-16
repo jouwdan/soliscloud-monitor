@@ -43,7 +43,7 @@ export function PowerChart({ data }: PowerChartProps) {
     .sort((a, b) => toMs(a.dataTimestamp) - toMs(b.dataTimestamp))
     .map((entry) => ({
       time: fmtTime(toMs(entry.dataTimestamp)),
-      power: toKW(entry.pac, entry.pacStr),
+      power: toKW(entry.pac, entry.pacStr, entry.pacPec),
     }))
 
   return (

@@ -188,14 +188,39 @@ export function saveCurrencySettings(c: CurrencySettings) {
 
 /**
  * Normalise a power reading to kW.
- * Solis returns pac, batteryPower, pSum etc. sometimes in W, sometimes in kW.
- * The companion `Str` field tells us the unit.
+ *
+ * Solis day-graph entries return raw integer values (e.g. pac: 5000)
+ * alongside a precision/multiplier field (e.g. pacPec: "0.001").
+ * The formula is:  value * pec = kW
+ *
+ * When the pec field is available we use it directly.
+ * When it's not, we check the Str field:
+ *   - "W"  → divide by 1000
+ *   - "kW" → use as-is
+ * As a final heuristic, if the Str says "kW" but the value is > 100
+ * (impossible for a residential inverter in kW), we treat it as Watts.
  */
-export function toKW(value: number | undefined, unitStr: string | undefined): number {
+export function toKW(
+  value: number | undefined,
+  unitStr: string | undefined,
+  pec?: string | number | undefined
+): number {
   if (value === undefined || value === null) return 0
+
+  // If pec (precision multiplier) is provided, use it: value * pec = kW
+  if (pec !== undefined && pec !== null && pec !== "") {
+    const multiplier = typeof pec === "number" ? pec : parseFloat(String(pec))
+    if (!isNaN(multiplier) && multiplier > 0 && multiplier < 1) {
+      return value * multiplier
+    }
+  }
+
   const u = (unitStr || "").toLowerCase().trim()
   if (u === "w") return value / 1000
-  // already kW or unknown – treat as kW
+
+  // Heuristic: if labeled "kW" but value is implausibly large, it's likely W
+  if (Math.abs(value) > 100) return value / 1000
+
   return value
 }
 
@@ -437,16 +462,21 @@ export interface InverterDayEntry {
   timeStr: string
   pac: number
   pacStr: string
+  pacPec?: string
   eToday: number
   eTotal: number
   state: number
   batteryPower?: number
   batteryPowerStr?: string
+  batteryPowerPec?: string
   batteryCapacitySoc?: number
   pSum?: number
   pSumStr?: string
+  pSumPec?: string
+  psumCalPec?: string
   familyLoadPower?: number
   familyLoadPowerStr?: string
+  familyLoadPowerPec?: string
   gridPurchasedTodayEnergy?: number
   gridSellTodayEnergy?: number
   bypassLoadPower?: number
