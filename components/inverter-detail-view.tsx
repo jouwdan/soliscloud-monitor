@@ -205,15 +205,14 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
       </div>
 
       {/* Self-Reliance & Energy Flow */}
-      {detail.type === 2 && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base font-semibold text-card-foreground">
-              <Leaf className="h-4 w-4 text-emerald-500" />
-              Self-Reliance & Energy Flow
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-5">
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base font-semibold text-card-foreground">
+            <Leaf className="h-4 w-4 text-emerald-500" />
+            Self-Reliance & Energy Flow
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-5">
             {/* Self-consumption / Self-reliance gauges */}
             {(() => {
               const produced = detail.eToday || 0
@@ -373,6 +372,7 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
                       {detail.gridSellTotalEnergy?.toFixed(1)} <span className="text-muted-foreground">{detail.gridSellTotalEnergyStr}</span>
                     </td>
                   </tr>
+                  {(detail.batteryTodayChargeEnergy || detail.batteryTotalChargeEnergy) ? (
                   <tr>
                     <td className="flex items-center gap-2 px-3 py-2.5 font-medium text-card-foreground">
                       <BatteryCharging className="h-3.5 w-3.5 text-primary" /> Battery Charge
@@ -390,6 +390,8 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
                       {detail.batteryTotalChargeEnergy?.toFixed(1)} <span className="text-muted-foreground">{detail.batteryTotalChargeEnergyStr}</span>
                     </td>
                   </tr>
+                  ) : null}
+                  {(detail.batteryTodayDischargeEnergy || detail.batteryTotalDischargeEnergy) ? (
                   <tr>
                     <td className="flex items-center gap-2 px-3 py-2.5 font-medium text-card-foreground">
                       <Battery className="h-3.5 w-3.5 text-primary" /> Battery Discharge
@@ -407,6 +409,7 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
                       {detail.batteryTotalDischargeEnergy?.toFixed(1)} <span className="text-muted-foreground">{detail.batteryTotalDischargeEnergyStr}</span>
                     </td>
                   </tr>
+                  ) : null}
                   {(detail.backupTodayEnergy || detail.backupTotalEnergy) ? (
                     <tr>
                       <td className="flex items-center gap-2 px-3 py-2.5 font-medium text-card-foreground">
@@ -426,8 +429,7 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
               </table>
             </div>
           </CardContent>
-        </Card>
-      )}
+      </Card>
 
       {/* DC/AC Readings */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
