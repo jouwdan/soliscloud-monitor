@@ -2,8 +2,6 @@
 
 import { useState } from "react"
 import {
-  Area,
-  AreaChart,
   Line,
   LineChart,
   ResponsiveContainer,
@@ -11,7 +9,6 @@ import {
   YAxis,
   Tooltip,
   CartesianGrid,
-  Legend,
 } from "recharts"
 import type { InverterDayEntry } from "@/lib/solis-client"
 import { toKW } from "@/lib/solis-client"
@@ -102,20 +99,31 @@ export function PowerChart({ data }: PowerChartProps) {
   }
 
   // Sort, normalise to kW, then bucket into 5-min averages
+  // Use pacPec as the shared fallback precision for all power fields in day entries,
+  // since Solis uses the same scale (e.g. 0.001 = raw values are in W) for the whole response.
   const rawPoints: RawPoint[] = [...data]
     .sort((a, b) => toMs(a.dataTimestamp) - toMs(b.dataTimestamp))
     .map((entry) => {
-      const batt = toKW(entry.batteryPower, entry.batteryPowerStr, entry.batteryPowerPec)
-      const grid = toKW(entry.pSum, entry.pSumStr, (entry as Record<string, unknown>).psumCalPec as string | undefined ?? (entry as Record<string, unknown>).pSumPec as string | undefined)
+      const raw = entry as Record<string, unknown>
+      const sharedPec = entry.pacPec
+      const gridPec = (raw.psumPec ?? raw.psumCalPec ?? raw.pSumPec ?? sharedPec) as string | undefined
+      const battPec = (entry.batteryPowerPec ?? sharedPec) as string | undefined
+      const loadPec = (entry.familyLoadPowerPec ?? sharedPec) as string | undefined
+
+      const batt = toKW(entry.batteryPower, entry.batteryPowerStr, battPec)
+      const grid = toKW(entry.pSum, entry.pSumStr, gridPec)
+
+      // Dead-band: suppress noisy readings below 0.02 kW (20W)
+      const DEAD_BAND = 0.02
 
       return {
         ts: toMs(entry.dataTimestamp),
         solar: toKW(entry.pac, entry.pacStr, entry.pacPec),
-        homeLoad: toKW(entry.familyLoadPower, entry.familyLoadPowerStr, entry.familyLoadPowerPec),
-        battCharge: batt > 0 ? batt : 0,
-        battDrain: batt < 0 ? Math.abs(batt) : 0,
-        gridImport: grid > 0 ? grid : 0,
-        gridExport: grid < 0 ? Math.abs(grid) : 0,
+        homeLoad: toKW(entry.familyLoadPower, entry.familyLoadPowerStr, loadPec),
+        battCharge: batt > DEAD_BAND ? batt : 0,
+        battDrain: batt < -DEAD_BAND ? Math.abs(batt) : 0,
+        gridImport: grid > DEAD_BAND ? grid : 0,
+        gridExport: grid < -DEAD_BAND ? Math.abs(grid) : 0,
       }
     })
 
