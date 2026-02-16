@@ -34,6 +34,7 @@ function fmtTime(ms: number): string {
 
 const SERIES = {
   solar:      { label: "Solar",          color: "hsl(36, 90%, 50%)"  },
+  homeLoad:   { label: "Home Load",      color: "hsl(220, 70%, 55%)" },
   battCharge: { label: "Batt Charge",    color: "hsl(142, 70%, 45%)" },
   battDrain:  { label: "Batt Discharge", color: "hsl(280, 65%, 55%)" },
   gridImport: { label: "Grid Import",    color: "hsl(0, 75%, 55%)"   },
@@ -41,6 +42,44 @@ const SERIES = {
 } as const
 
 type SeriesKey = keyof typeof SERIES
+
+interface RawPoint {
+  ts: number
+  solar: number
+  homeLoad: number
+  battCharge: number
+  battDrain: number
+  gridImport: number
+  gridExport: number
+}
+
+/** Bucket raw points into 5-minute averages */
+function bucketTo5Min(points: RawPoint[]): (Omit<RawPoint, "ts"> & { time: string })[] {
+  const FIVE_MIN = 5 * 60 * 1000
+  const buckets = new Map<number, RawPoint[]>()
+
+  for (const p of points) {
+    const key = Math.floor(p.ts / FIVE_MIN) * FIVE_MIN
+    const arr = buckets.get(key)
+    if (arr) arr.push(p)
+    else buckets.set(key, [p])
+  }
+
+  return [...buckets.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([key, pts]) => {
+      const n = pts.length
+      return {
+        time: fmtTime(key),
+        solar: pts.reduce((s, p) => s + p.solar, 0) / n,
+        homeLoad: pts.reduce((s, p) => s + p.homeLoad, 0) / n,
+        battCharge: pts.reduce((s, p) => s + p.battCharge, 0) / n,
+        battDrain: pts.reduce((s, p) => s + p.battDrain, 0) / n,
+        gridImport: pts.reduce((s, p) => s + p.gridImport, 0) / n,
+        gridExport: pts.reduce((s, p) => s + p.gridExport, 0) / n,
+      }
+    })
+}
 
 export function PowerChart({ data }: PowerChartProps) {
   const [hidden, setHidden] = useState<Set<SeriesKey>>(new Set())
@@ -62,22 +101,25 @@ export function PowerChart({ data }: PowerChartProps) {
     })
   }
 
-  // Sort by timestamp and normalise all power readings to kW
-  const chartData = [...data]
+  // Sort, normalise to kW, then bucket into 5-min averages
+  const rawPoints: RawPoint[] = [...data]
     .sort((a, b) => toMs(a.dataTimestamp) - toMs(b.dataTimestamp))
     .map((entry) => {
       const batt = toKW(entry.batteryPower, entry.batteryPowerStr, entry.batteryPowerPec)
       const grid = toKW(entry.pSum, entry.pSumStr, (entry as Record<string, unknown>).psumCalPec as string | undefined ?? (entry as Record<string, unknown>).pSumPec as string | undefined)
 
       return {
-        time: fmtTime(toMs(entry.dataTimestamp)),
+        ts: toMs(entry.dataTimestamp),
         solar: toKW(entry.pac, entry.pacStr, entry.pacPec),
+        homeLoad: toKW(entry.familyLoadPower, entry.familyLoadPowerStr, entry.familyLoadPowerPec),
         battCharge: batt > 0 ? batt : 0,
         battDrain: batt < 0 ? Math.abs(batt) : 0,
         gridImport: grid > 0 ? grid : 0,
         gridExport: grid < 0 ? Math.abs(grid) : 0,
       }
     })
+
+  const chartData = bucketTo5Min(rawPoints)
 
   return (
     <div className="space-y-2">
