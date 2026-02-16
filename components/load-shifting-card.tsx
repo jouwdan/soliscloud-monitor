@@ -17,6 +17,7 @@ import {
   getTariffGroups,
   getRateForHour,
   getCurrencySettings,
+  getExportPrice,
   toKW,
   type InverterDayEntry,
   type InverterDetail,
@@ -80,6 +81,7 @@ function analyzeLoadShifting(
   let peakGridCost = 0
   let gridExportRevenue = 0
   let totalLoadEnergy = 0
+  const feedInRate = getExportPrice()
 
   // Per-tariff-group accumulators
   const groupAccum = new Map<string, { gridImport: number; consumption: number; cost: number }>()
@@ -135,9 +137,9 @@ function analyzeLoadShifting(
     // Track total load for "without solar" cost
     totalLoadEnergy += loadPower * intervalHours
 
-    // Track grid export revenue (negative pSum = exporting)
-    if (gridPower < 0) {
-      gridExportRevenue += Math.abs(gridPower) * intervalHours * rate
+    // Track grid export revenue (negative pSum = exporting) using the export/feed-in tariff
+    if (gridPower < 0 && feedInRate > 0) {
+      gridExportRevenue += Math.abs(gridPower) * intervalHours * feedInRate
     }
 
     if (offPeak) {

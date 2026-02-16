@@ -184,6 +184,26 @@ export function saveCurrencySettings(c: CurrencySettings) {
   localStorage.setItem(STORAGE_KEY_CURRENCY, JSON.stringify(c))
 }
 
+// --------- Export price helpers (localStorage) ----------
+
+const STORAGE_KEY_EXPORT_PRICE = "solis_export_price"
+
+export function getExportPrice(): number {
+  if (typeof window === "undefined") return 0
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_EXPORT_PRICE)
+    if (raw) {
+      const parsed = parseFloat(raw)
+      if (!isNaN(parsed) && parsed >= 0) return parsed
+    }
+  } catch { /* ignore */ }
+  return 0
+}
+
+export function saveExportPrice(price: number) {
+  localStorage.setItem(STORAGE_KEY_EXPORT_PRICE, String(Math.max(0, price)))
+}
+
 // --------- Unit normalisation helpers ----------
 
 /**

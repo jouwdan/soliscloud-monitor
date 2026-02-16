@@ -20,7 +20,7 @@ import {
   PlugZap,
   ShieldCheck,
 } from "lucide-react"
-import { useInverterDetail, useInverterDay, useInverterMonth, useInverterYear, getCurrencySettings, getTariffGroups } from "@/lib/solis-client"
+import { useInverterDetail, useInverterDay, useInverterMonth, useInverterYear, getCurrencySettings, getTariffGroups, getExportPrice } from "@/lib/solis-client"
 import { PowerFlow } from "@/components/power-flow"
 import { LoadShiftingCard } from "@/components/load-shifting-card"
 import { StatusBadge } from "@/components/status-badge"
@@ -45,6 +45,7 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
   const thisYear = format(new Date(), "yyyy")
 
   const currency = useMemo(() => getCurrencySettings(), [])
+  const exportRate = useMemo(() => getExportPrice(), [])
   const avgRate = useMemo(() => {
     const groups = getTariffGroups()
     const rates = groups.filter((g) => g.rate > 0).map((g) => g.rate)
@@ -212,6 +213,9 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
 
             const gridAvoided = consumed > 0.01 ? Math.max(0, consumed - clampedImport) : 0
             const valueSaved = avgRate > 0 ? gridAvoided * avgRate : 0
+            const exportRevenue = exportRate > 0 ? clampedExport * exportRate : 0
+            const gridCostToday = clampedImport * avgRate
+            const netCostToday = gridCostToday - exportRevenue
 
             return (
               <>
@@ -240,10 +244,10 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
                   </CardContent>
                 </Card>
 
-                {/* Value Savings */}
+                {/* Value Savings + Cost Projection */}
                 {avgRate > 0 && consumed > 0.01 && (
                   <Card>
-                    <CardContent className="p-4">
+                    <CardContent className="p-4 space-y-3">
                       <div className="grid grid-cols-3 gap-3 text-center">
                         <div className="rounded-md bg-emerald-500/5 p-2">
                           <p className="text-[10px] font-medium text-muted-foreground">Saved Today</p>
@@ -252,14 +256,44 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
                         </div>
                         <div className="rounded-md border p-2">
                           <p className="text-[10px] font-medium text-muted-foreground">Grid Cost</p>
-                          <p className="mt-0.5 text-lg font-bold tabular-nums text-card-foreground">{currency.symbol}{(clampedImport * avgRate).toFixed(2)}</p>
+                          <p className="mt-0.5 text-lg font-bold tabular-nums text-card-foreground">{currency.symbol}{gridCostToday.toFixed(2)}</p>
                           <p className="text-[9px] text-muted-foreground">{clampedImport.toFixed(1)} kWh imported</p>
                         </div>
-                        <div className="rounded-md border p-2">
-                          <p className="text-[10px] font-medium text-muted-foreground">Without Solar</p>
-                          <p className="mt-0.5 text-lg font-bold tabular-nums text-muted-foreground line-through">{currency.symbol}{(consumed * avgRate).toFixed(2)}</p>
-                          <p className="text-[9px] text-muted-foreground">{consumed.toFixed(1)} kWh from grid</p>
+                        {exportRate > 0 ? (
+                          <div className="rounded-md bg-emerald-500/5 p-2">
+                            <p className="text-[10px] font-medium text-muted-foreground">Export Revenue</p>
+                            <p className="mt-0.5 text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{currency.symbol}{exportRevenue.toFixed(2)}</p>
+                            <p className="text-[9px] text-muted-foreground">{clampedExport.toFixed(1)} kWh exported</p>
+                          </div>
+                        ) : (
+                          <div className="rounded-md border p-2">
+                            <p className="text-[10px] font-medium text-muted-foreground">Without Solar</p>
+                            <p className="mt-0.5 text-lg font-bold tabular-nums text-muted-foreground line-through">{currency.symbol}{(consumed * avgRate).toFixed(2)}</p>
+                            <p className="text-[9px] text-muted-foreground">{consumed.toFixed(1)} kWh from grid</p>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Projected electricity cost */}
+                      <div className="border-t pt-3">
+                        <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Projected Electricity Cost</p>
+                        <div className="grid grid-cols-3 gap-3 text-center">
+                          <div>
+                            <p className="text-[10px] text-muted-foreground">Daily</p>
+                            <p className="text-base font-bold tabular-nums text-card-foreground">{currency.symbol}{netCostToday.toFixed(2)}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] text-muted-foreground">Weekly</p>
+                            <p className="text-base font-bold tabular-nums text-card-foreground">{currency.symbol}{(netCostToday * 7).toFixed(2)}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] text-muted-foreground">Monthly</p>
+                            <p className="text-base font-bold tabular-nums text-card-foreground">{currency.symbol}{(netCostToday * 30).toFixed(2)}</p>
+                          </div>
                         </div>
+                        <p className="mt-1.5 text-center text-[9px] text-muted-foreground">
+                          Based on today{"'"}s usage pattern{exportRate > 0 ? " (net of export revenue)" : ""}
+                        </p>
                       </div>
                     </CardContent>
                   </Card>

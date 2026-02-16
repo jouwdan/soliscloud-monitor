@@ -35,11 +35,13 @@ import {
   saveTariffGroups,
   getCurrencySettings,
   saveCurrencySettings,
+  getExportPrice,
+  saveExportPrice,
   CURRENCY_OPTIONS,
   type TariffGroup,
   type CurrencySettings,
 } from "@/lib/solis-client"
-import { Plus, Trash2, Coins } from "lucide-react"
+import { Plus, Trash2, Coins, ArrowUpFromLine } from "lucide-react"
 
 export function SettingsView() {
   const router = useRouter()
@@ -55,6 +57,8 @@ export function SettingsView() {
   const [tariffSaved, setTariffSaved] = useState(false)
   const [currency, setCurrency] = useState<CurrencySettings>(() => getCurrencySettings())
   const [currencySaved, setCurrencySaved] = useState(false)
+  const [exportPrice, setExportPrice] = useState(() => getExportPrice())
+  const [exportPriceSaved, setExportPriceSaved] = useState(false)
 
   async function handleTestConnection() {
     setTesting(true)
@@ -373,6 +377,64 @@ export function SettingsView() {
               Saved
             </span>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Export / Feed-in Price */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base font-semibold text-card-foreground">
+            <ArrowUpFromLine className="h-4 w-4 text-emerald-500" />
+            Export / Feed-in Tariff
+          </CardTitle>
+          <CardDescription>
+            The rate you receive for exporting surplus solar to the grid ({currency.symbol}/kWh).
+            Set to 0 if you don{"'"}t have a feed-in tariff.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="export-price" className="text-card-foreground">
+                Export rate
+              </Label>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">{currency.symbol}</span>
+                <Input
+                  id="export-price"
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  value={exportPrice || ""}
+                  placeholder="0.00"
+                  onChange={(e) => {
+                    setExportPrice(parseFloat(e.target.value) || 0)
+                    setExportPriceSaved(false)
+                  }}
+                  className="w-28 font-mono tabular-nums"
+                />
+                <span className="text-sm text-muted-foreground">per kWh</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <Button
+                size="sm"
+                onClick={() => {
+                  saveExportPrice(exportPrice)
+                  setExportPriceSaved(true)
+                  setTimeout(() => setExportPriceSaved(false), 3000)
+                }}
+              >
+                Save
+              </Button>
+              {exportPriceSaved && (
+                <span className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
+                  <CheckCircle2 className="h-3 w-3" />
+                  Saved
+                </span>
+              )}
+            </div>
+          </div>
         </CardContent>
       </Card>
 
