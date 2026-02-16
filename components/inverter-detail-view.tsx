@@ -234,12 +234,17 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
               const imported = detail.gridPurchasedTodayEnergy || 0
               const consumed = detail.homeLoadTodayEnergy || 0
 
-              const selfConsumed = Math.max(0, produced - exported)
+              // Self-consumed solar = production minus what was exported to grid
+              const selfConsumedSolar = Math.max(0, produced - exported)
+              // Self-consumption rate: how much of your production you used yourself
               const selfConsumptionRate = produced > 0
-                ? Math.min(100, (selfConsumed / produced) * 100)
+                ? Math.min(100, (selfConsumedSolar / produced) * 100)
                 : 0
+              // Self-reliance rate: how much of your consumption was NOT from grid
+              // = (consumption - grid import) / consumption
+              const selfSupplied = Math.max(0, consumed - imported)
               const selfRelianceRate = consumed > 0
-                ? Math.min(100, (selfConsumed / consumed) * 100)
+                ? Math.min(100, (selfSupplied / consumed) * 100)
                 : 0
 
               return (
@@ -257,7 +262,7 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
                       />
                     </div>
                     <p className="mt-1.5 text-xs text-muted-foreground">
-                      of load met by solar
+                      of load met without grid
                     </p>
                   </div>
 
@@ -298,7 +303,7 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
                     </p>
                     <p className="text-sm text-muted-foreground">{detail.familyLoadPowerStr || "kW"}</p>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      {detail.familyLoadPercent ? `${detail.familyLoadPercent}% capacity` : "Current draw"}
+                      Today: {(detail.homeLoadTodayEnergy || 0).toFixed(1)} {detail.homeLoadTodayEnergyStr || "kWh"}
                     </p>
                   </div>
                 </div>
