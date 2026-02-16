@@ -8,6 +8,7 @@ import {
   Battery,
   TrendingUp,
   Info,
+  Coins,
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -54,6 +55,11 @@ interface LoadShiftingAnalysis {
   totalGridCost: number
   shiftedSavings: number
   hasRates: boolean
+  offPeakGridCost: number
+  peakGridCost: number
+  gridExportRevenue: number
+  netCost: number
+  costWithoutSolar: number
 }
 
 function analyzeLoadShifting(
@@ -70,6 +76,10 @@ function analyzeLoadShifting(
   let peakConsumption = 0
   let offPeakPoints = 0
   let peakPoints = 0
+  let offPeakGridCost = 0
+  let peakGridCost = 0
+  let gridExportRevenue = 0
+  let totalLoadEnergy = 0
 
   // Per-tariff-group accumulators
   const groupAccum = new Map<string, { gridImport: number; consumption: number; cost: number }>()
@@ -98,11 +108,15 @@ function analyzeLoadShifting(
       if (diff > 0 && diff < 1) intervalHours = diff
     }
 
-    // Normalise all power readings to kW (pass Pec multiplier when available)
-    const gridPower = toKW(entry.pSum, entry.pSumStr, entry.psumCalPec ?? entry.pSumPec)
-    const battPower = toKW(entry.batteryPower, entry.batteryPowerStr, entry.batteryPowerPec)
+    // Normalise all power readings to kW
+    // Use pacPec as shared fallback since Solis day entries use the same scale for all fields
+    const raw = entry as Record<string, unknown>
+    const sharedPec = entry.pacPec
+    const gridPec = (raw.psumPec ?? raw.psumCalPec ?? raw.pSumPec ?? sharedPec) as string | undefined
+    const gridPower = toKW(entry.pSum, entry.pSumStr, gridPec)
+    const battPower = toKW(entry.batteryPower, entry.batteryPowerStr, (entry.batteryPowerPec ?? sharedPec) as string | undefined)
     const solarPower = toKW(entry.pac, entry.pacStr, entry.pacPec)
-    const loadPower = toKW(entry.familyLoadPower, entry.familyLoadPowerStr, entry.familyLoadPowerPec)
+    const loadPower = toKW(entry.familyLoadPower, entry.familyLoadPowerStr, (entry.familyLoadPowerPec ?? sharedPec) as string | undefined)
 
     // Accumulate per-tariff-group
     const rate = getRateForHour(hour, tariffGroups)
@@ -118,14 +132,28 @@ function analyzeLoadShifting(
       acc.cost += imported * rate // rate is in currency/kWh as entered by user
     }
 
+    // Track total load for "without solar" cost
+    totalLoadEnergy += loadPower * intervalHours
+
+    // Track grid export revenue (negative pSum = exporting)
+    if (gridPower < 0) {
+      gridExportRevenue += Math.abs(gridPower) * intervalHours * rate
+    }
+
     if (offPeak) {
       offPeakPoints++
-      if (gridPower > 0) offPeakGridImport += gridPower * intervalHours
+      if (gridPower > 0) {
+        offPeakGridImport += gridPower * intervalHours
+        offPeakGridCost += gridPower * intervalHours * rate
+      }
       if (battPower > 0) offPeakBatteryCharge += battPower * intervalHours
       offPeakConsumption += loadPower * intervalHours
     } else {
       peakPoints++
-      if (gridPower > 0) peakGridImport += gridPower * intervalHours
+      if (gridPower > 0) {
+        peakGridImport += gridPower * intervalHours
+        peakGridCost += gridPower * intervalHours * rate
+      }
       if (battPower < 0) peakBatteryDischarge += Math.abs(battPower) * intervalHours
       if (solarPower > 0) peakSolarDirect += solarPower * intervalHours
       peakConsumption += loadPower * intervalHours
@@ -155,6 +183,11 @@ function analyzeLoadShifting(
   const minRate = rates.length > 0 ? Math.min(...rates) : 0
   const shiftedSavings = hasRates ? loadShiftedEnergy * (maxRate - minRate) : 0
 
+  // What it would cost if ALL consumption came from grid at avg weighted rate
+  const avgRate = rates.length > 0 ? rates.reduce((a, b) => a + b, 0) / rates.length : 0
+  const costWithoutSolar = totalLoadEnergy * avgRate
+  const netCost = totalGridCost - gridExportRevenue
+
   return {
     offPeakGridImport,
     peakGridImport,
@@ -173,6 +206,11 @@ function analyzeLoadShifting(
     totalGridCost,
     shiftedSavings,
     hasRates,
+    offPeakGridCost,
+    peakGridCost,
+    gridExportRevenue,
+    netCost,
+    costWithoutSolar,
   }
 }
 
@@ -294,6 +332,17 @@ export function LoadShiftingCard({ detail, dayData }: LoadShiftingCardProps) {
                       {analysis.offPeakConsumption.toFixed(2)} kWh
                     </span>
                   </div>
+                  {analysis.hasRates && (
+                    <div className="flex items-center justify-between border-t pt-2 text-sm">
+                      <span className="flex items-center gap-1.5 text-muted-foreground">
+                        <Coins className="h-3.5 w-3.5" />
+                        Grid Cost
+                      </span>
+                      <span className="font-medium tabular-nums text-card-foreground">
+                        {currency.symbol}{analysis.offPeakGridCost.toFixed(2)}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -346,6 +395,17 @@ export function LoadShiftingCard({ detail, dayData }: LoadShiftingCardProps) {
                       {analysis.peakConsumption.toFixed(2)} kWh
                     </span>
                   </div>
+                  {analysis.hasRates && (
+                    <div className="flex items-center justify-between border-t pt-2 text-sm">
+                      <span className="flex items-center gap-1.5 text-muted-foreground">
+                        <Coins className="h-3.5 w-3.5" />
+                        Grid Cost
+                      </span>
+                      <span className="font-medium tabular-nums text-red-500">
+                        {currency.symbol}{analysis.peakGridCost.toFixed(2)}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -391,6 +451,46 @@ export function LoadShiftingCard({ detail, dayData }: LoadShiftingCardProps) {
                 </div>
               )}
             </div>
+
+            {/* Monetary summary */}
+            {analysis.hasRates && (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className="rounded-lg border p-3 text-center">
+                  <p className="text-xs text-muted-foreground">Total Grid Cost</p>
+                  <p className="mt-1 text-lg font-bold tabular-nums text-card-foreground">
+                    {currency.symbol}{analysis.totalGridCost.toFixed(2)}
+                  </p>
+                  <p className="text-xs text-muted-foreground">import cost</p>
+                </div>
+                {analysis.gridExportRevenue > 0.01 && (
+                  <div className="rounded-lg border p-3 text-center">
+                    <p className="text-xs text-muted-foreground">Export Revenue</p>
+                    <p className="mt-1 text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+                      {currency.symbol}{analysis.gridExportRevenue.toFixed(2)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">feed-in</p>
+                  </div>
+                )}
+                <div className="rounded-lg border p-3 text-center">
+                  <p className="text-xs text-muted-foreground">Net Cost</p>
+                  <p className="mt-1 text-lg font-bold tabular-nums text-card-foreground">
+                    {currency.symbol}{analysis.netCost.toFixed(2)}
+                  </p>
+                  <p className="text-xs text-muted-foreground">after export</p>
+                </div>
+                {analysis.costWithoutSolar > 0.01 && (
+                  <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3 text-center">
+                    <p className="text-xs text-muted-foreground">Without Solar</p>
+                    <p className="mt-1 text-lg font-bold tabular-nums text-muted-foreground line-through">
+                      {currency.symbol}{analysis.costWithoutSolar.toFixed(2)}
+                    </p>
+                    <p className="text-xs text-emerald-600 dark:text-emerald-400">
+                      saving {currency.symbol}{(analysis.costWithoutSolar - analysis.netCost).toFixed(2)}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Tariff breakdown */}
             {analysis.hasRates && analysis.tariffBreakdown.length > 0 && (
