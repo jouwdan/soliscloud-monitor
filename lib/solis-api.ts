@@ -68,17 +68,6 @@ export async function solisApiCall<T = unknown>(
   const date = getGMTDate()
   const canonicalizedResource = endpoint
 
-  const signStr = `POST\n${contentMD5}\n${contentType}\n${date}\n${canonicalizedResource}`
-
-  console.log("[v0] --- Solis Signing Debug ---")
-  console.log("[v0] Body string:", bodyStr)
-  console.log("[v0] Content-MD5:", contentMD5)
-  console.log("[v0] Content-Type:", contentType)
-  console.log("[v0] Date:", date)
-  console.log("[v0] CanonicalizedResource:", canonicalizedResource)
-  console.log("[v0] Sign string (escaped):", JSON.stringify(signStr))
-  console.log("[v0] API ID length:", apiId.length, "Secret length:", apiSecret.length)
-
   const authorization = getAuthorization(
     apiId,
     apiSecret,
@@ -87,8 +76,6 @@ export async function solisApiCall<T = unknown>(
     date,
     canonicalizedResource
   )
-
-  console.log("[v0] Authorization:", authorization)
 
   const response = await fetch(`${SOLIS_API_URL}${endpoint}`, {
     method: "POST",
@@ -102,8 +89,6 @@ export async function solisApiCall<T = unknown>(
   })
 
   if (!response.ok) {
-    const text = await response.text().catch(() => "")
-    console.error("[v0] Solis HTTP error", response.status, text)
     throw new Error(
       `Solis API error: ${response.status} ${response.statusText}`
     )

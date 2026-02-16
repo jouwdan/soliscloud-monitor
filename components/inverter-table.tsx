@@ -1,6 +1,6 @@
 "use client"
 
-import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { ChevronRight } from "lucide-react"
 import { StatusBadge } from "@/components/status-badge"
 import type { InverterRecord } from "@/lib/solis-client"
@@ -10,6 +10,8 @@ interface InverterTableProps {
 }
 
 export function InverterTable({ inverters }: InverterTableProps) {
+  const router = useRouter()
+
   if (!inverters.length) {
     return (
       <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
@@ -46,7 +48,19 @@ export function InverterTable({ inverters }: InverterTableProps) {
         </thead>
         <tbody>
           {inverters.map((inv) => (
-            <tr key={inv.id} className="border-t transition-colors hover:bg-muted/30">
+            <tr
+              key={inv.id}
+              role="link"
+              tabIndex={0}
+              onClick={() => router.push(`/inverters/${inv.id}?sn=${inv.sn}`)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault()
+                  router.push(`/inverters/${inv.id}?sn=${inv.sn}`)
+                }
+              }}
+              className="border-t cursor-pointer transition-colors hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+            >
               <td className="px-4 py-3">
                 <div>
                   <p className="font-medium text-card-foreground">
@@ -73,12 +87,7 @@ export function InverterTable({ inverters }: InverterTableProps) {
                 {inv.stationName || "-"}
               </td>
               <td className="px-4 py-3 text-right">
-                <Link
-                  href={`/inverters/${inv.id}?sn=${inv.sn}`}
-                  className="inline-flex items-center text-muted-foreground transition-colors hover:text-primary"
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Link>
+                <ChevronRight className="h-4 w-4 text-muted-foreground" />
               </td>
             </tr>
           ))}
