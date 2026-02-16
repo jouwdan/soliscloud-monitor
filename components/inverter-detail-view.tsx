@@ -38,7 +38,7 @@ interface InverterDetailViewProps {
 
 export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
   const { data: detail, error, isLoading } = useInverterDetail(id, sn)
-  const [chartTab, setChartTab] = useState("day")
+  const [chartTab, setChartTab] = useState("month")
 
   const today = format(new Date(), "yyyy-MM-dd")
   const thisMonth = format(new Date(), "yyyy-MM")
@@ -189,22 +189,28 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
             </CardContent>
           </Card>
 
-          {/* Self-Reliance & Self-Consumption */}
+          {/* Self-Reliance & Self-Consumption + Value Savings */}
           {(() => {
             const produced = detail.eToday || 0
             const exported = detail.gridSellTodayEnergy || 0
             const imported = detail.gridPurchasedTodayEnergy || 0
             const consumed = detail.homeLoadTodayEnergy || 0
 
-            const selfConsumedSolar = Math.max(0, produced - exported)
-            const selfConsumptionRate = produced > 0
-              ? Math.min(100, (selfConsumedSolar / produced) * 100)
+            // Self-consumption: % of solar production kept (not exported)
+            // Guard: exported cannot exceed produced
+            const clampedExport = Math.min(exported, produced)
+            const selfConsumptionRate = produced > 0.01
+              ? ((produced - clampedExport) / produced) * 100
               : 0
-            const selfSupplied = Math.max(0, consumed - imported)
-            const selfRelianceRate = consumed > 0
-              ? Math.min(100, (selfSupplied / consumed) * 100)
+
+            // Self-reliance: % of consumption met without grid
+            // Guard: imported cannot exceed consumed
+            const clampedImport = Math.min(imported, consumed)
+            const selfRelianceRate = consumed > 0.01
+              ? ((consumed - clampedImport) / consumed) * 100
               : 0
-            const gridAvoided = selfSupplied
+
+            const gridAvoided = consumed > 0.01 ? Math.max(0, consumed - clampedImport) : 0
             const valueSaved = avgRate > 0 ? gridAvoided * avgRate : 0
 
             return (
@@ -217,7 +223,7 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
                         <p className="text-[10px] font-medium text-muted-foreground">Self-Reliance</p>
                         <p className="mt-0.5 text-2xl font-bold tabular-nums text-card-foreground">{selfRelianceRate.toFixed(0)}%</p>
                         <div className="mx-auto mt-1.5 h-1.5 w-full max-w-[120px] rounded-full bg-muted">
-                          <div className="h-1.5 rounded-full bg-emerald-500 transition-all" style={{ width: `${selfRelianceRate}%` }} />
+                          <div className="h-1.5 rounded-full bg-emerald-500 transition-all" style={{ width: `${Math.min(100, selfRelianceRate)}%` }} />
                         </div>
                         <p className="mt-1 text-[9px] text-muted-foreground">of load met without grid</p>
                       </div>
@@ -226,7 +232,7 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
                         <p className="text-[10px] font-medium text-muted-foreground">Self-Consumption</p>
                         <p className="mt-0.5 text-2xl font-bold tabular-nums text-card-foreground">{selfConsumptionRate.toFixed(0)}%</p>
                         <div className="mx-auto mt-1.5 h-1.5 w-full max-w-[120px] rounded-full bg-muted">
-                          <div className="h-1.5 rounded-full bg-primary transition-all" style={{ width: `${selfConsumptionRate}%` }} />
+                          <div className="h-1.5 rounded-full bg-primary transition-all" style={{ width: `${Math.min(100, selfConsumptionRate)}%` }} />
                         </div>
                         <p className="mt-1 text-[9px] text-muted-foreground">of production used directly</p>
                       </div>
@@ -235,7 +241,7 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
                 </Card>
 
                 {/* Value Savings */}
-                {avgRate > 0 && consumed > 0 && (
+                {avgRate > 0 && consumed > 0.01 && (
                   <Card>
                     <CardContent className="p-4">
                       <div className="grid grid-cols-3 gap-3 text-center">
@@ -246,8 +252,8 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
                         </div>
                         <div className="rounded-md border p-2">
                           <p className="text-[10px] font-medium text-muted-foreground">Grid Cost</p>
-                          <p className="mt-0.5 text-lg font-bold tabular-nums text-card-foreground">{currency.symbol}{(imported * avgRate).toFixed(2)}</p>
-                          <p className="text-[9px] text-muted-foreground">{imported.toFixed(1)} kWh imported</p>
+                          <p className="mt-0.5 text-lg font-bold tabular-nums text-card-foreground">{currency.symbol}{(clampedImport * avgRate).toFixed(2)}</p>
+                          <p className="text-[9px] text-muted-foreground">{clampedImport.toFixed(1)} kWh imported</p>
                         </div>
                         <div className="rounded-md border p-2">
                           <p className="text-[10px] font-medium text-muted-foreground">Without Solar</p>
@@ -261,6 +267,16 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
               </>
             )
           })()}
+
+          {/* Today's power curve — fills remaining space */}
+          <Card className="flex-1">
+            <CardHeader className="pb-1">
+              <CardTitle className="text-sm font-semibold text-card-foreground">Today{"'"}s Power</CardTitle>
+            </CardHeader>
+            <CardContent className="pb-4">
+              <PowerChart data={dayData || []} />
+            </CardContent>
+          </Card>
         </div>
       </div>
 
@@ -490,32 +506,26 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
         </Card>
       </div>
 
-      {/* Charts */}
+      {/* Energy History Charts */}
       <Card>
         <CardHeader className="pb-3">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <CardTitle className="text-base font-semibold text-card-foreground">
-              Energy Production
+              Energy History
             </CardTitle>
             <Tabs value={chartTab} onValueChange={setChartTab}>
               <TabsList className="h-8">
-                <TabsTrigger value="day" className="text-xs px-3">
-                  Today
-                </TabsTrigger>
                 <TabsTrigger value="month" className="text-xs px-3">
-                  Month
+                  This Month
                 </TabsTrigger>
                 <TabsTrigger value="year" className="text-xs px-3">
-                  Year
+                  This Year
                 </TabsTrigger>
               </TabsList>
             </Tabs>
           </div>
         </CardHeader>
         <CardContent>
-          {chartTab === "day" && (
-            <PowerChart data={dayData || []} />
-          )}
           {chartTab === "month" && (
             <EnergyBarChart
               data={(monthData || []).map((d) => ({
