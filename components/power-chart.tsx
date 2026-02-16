@@ -10,9 +10,23 @@ import {
   CartesianGrid,
 } from "recharts"
 import type { InverterDayEntry } from "@/lib/solis-client"
+import { toKW } from "@/lib/solis-client"
 
 interface PowerChartProps {
   data: InverterDayEntry[]
+}
+
+/** Normalise a Solis timestamp to milliseconds */
+function toMs(raw: string | number): number {
+  const n = Number(raw)
+  // If it looks like seconds (< 1e12), convert to ms
+  return n > 0 && n < 1e12 ? n * 1000 : n
+}
+
+/** Format a ms timestamp to HH:MM local time */
+function fmtTime(ms: number): string {
+  const d = new Date(ms)
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })
 }
 
 export function PowerChart({ data }: PowerChartProps) {
@@ -24,10 +38,13 @@ export function PowerChart({ data }: PowerChartProps) {
     )
   }
 
-  const chartData = data.map((entry) => ({
-    time: entry.timeStr?.split(" ").pop()?.substring(0, 5) || entry.timeStr || "",
-    power: entry.pac || 0,
-  }))
+  // Sort by timestamp and normalise power to kW
+  const chartData = [...data]
+    .sort((a, b) => toMs(a.dataTimestamp) - toMs(b.dataTimestamp))
+    .map((entry) => ({
+      time: fmtTime(toMs(entry.dataTimestamp)),
+      power: toKW(entry.pac, entry.pacStr),
+    }))
 
   return (
     <div className="h-64 w-full">
@@ -52,7 +69,7 @@ export function PowerChart({ data }: PowerChartProps) {
             tickLine={false}
             axisLine={false}
             width={45}
-            tickFormatter={(v) => `${v}`}
+            tickFormatter={(v) => `${v} kW`}
           />
           <Tooltip
             contentStyle={{
