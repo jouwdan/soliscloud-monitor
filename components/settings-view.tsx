@@ -646,7 +646,7 @@ export function SettingsView() {
                 SolisCloud <ExternalLink className="h-3 w-3" />
               </a>
             </li>
-            <li>Navigate to Account &rarr; Basic Settings &rarr; API Management</li>
+            <li>Navigate to Service &rarr; API Management</li>
             <li>Generate or copy your API ID and API Secret</li>
             <li>Paste them in the login form when you first open this app</li>
           </ol>

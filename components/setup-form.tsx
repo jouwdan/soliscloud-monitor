@@ -84,8 +84,7 @@ export function SetupForm({ onComplete }: { onComplete: () => void }) {
                 </a>
               </li>
               <li>
-                Go to <span className="text-card-foreground">Account</span> &rarr;{" "}
-                <span className="text-card-foreground">Basic Settings</span> &rarr;{" "}
+                Go to <span className="text-card-foreground">Service</span> &rarr;{" "}
                 <span className="text-card-foreground">API Management</span>
               </li>
               <li>Copy your API ID and API Secret</li>
