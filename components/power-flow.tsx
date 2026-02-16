@@ -47,6 +47,33 @@ function FlowDots({
   )
 }
 
+/* ─── SOC ring (circular progress arc) ─── */
+function SocRing({ x, y, r, percent, color }: { x: number; y: number; r: number; percent: number; color: string }) {
+  const circumference = 2 * Math.PI * r
+  const filled = Math.max(0, Math.min(100, percent))
+  const offset = circumference - (filled / 100) * circumference
+  return (
+    <g>
+      {/* Background track */}
+      <circle cx={x} cy={y} r={r} fill="none" stroke="currentColor" strokeWidth={3} opacity={0.1} />
+      {/* Filled arc — starts from top (rotate -90) */}
+      <circle
+        cx={x}
+        cy={y}
+        r={r}
+        fill="none"
+        stroke={color}
+        strokeWidth={3}
+        strokeLinecap="round"
+        strokeDasharray={circumference}
+        strokeDashoffset={offset}
+        transform={`rotate(-90 ${x} ${y})`}
+        className="transition-[stroke-dashoffset] duration-700 ease-in-out"
+      />
+    </g>
+  )
+}
+
 /* ─── node bubble ─── */
 function NodeBubble({
   x,
@@ -57,6 +84,7 @@ function NodeBubble({
   unit,
   color,
   sub,
+  socPercent,
 }: {
   x: number
   y: number
@@ -66,18 +94,27 @@ function NodeBubble({
   unit: string
   color: string
   sub?: string
+  socPercent?: number
 }) {
+  const hasSoc = socPercent !== undefined
   return (
-    <foreignObject x={x - 52} y={y - 52} width={104} height={104}>
-      <div className="flex h-full w-full flex-col items-center justify-center rounded-full border-2 bg-card text-center"
-        style={{ borderColor: color }}>
-        <Icon className="h-4 w-4" style={{ color }} />
-        <span className="mt-0.5 text-[10px] font-medium text-muted-foreground">{label}</span>
-        <span className="text-sm font-bold tabular-nums text-card-foreground leading-tight">{value}</span>
-        <span className="text-[9px] text-muted-foreground">{unit}</span>
-        {sub && <span className="text-[9px] text-muted-foreground leading-tight">{sub}</span>}
-      </div>
-    </foreignObject>
+    <>
+      {/* SVG ring — SOC arc for battery, plain circle for others */}
+      {hasSoc ? (
+        <SocRing x={x} y={y} r={50} percent={socPercent} color={color} />
+      ) : (
+        <circle cx={x} cy={y} r={50} fill="none" stroke={color} strokeWidth={2} opacity={0.6} />
+      )}
+      <foreignObject x={x - 48} y={y - 48} width={96} height={96}>
+        <div className="flex h-full w-full flex-col items-center justify-center rounded-full bg-card text-center">
+          <Icon className="h-4 w-4" style={{ color }} />
+          <span className="mt-0.5 text-[10px] font-medium text-muted-foreground">{label}</span>
+          <span className="text-sm font-bold tabular-nums text-card-foreground leading-tight">{value}</span>
+          <span className="text-[9px] text-muted-foreground">{unit}</span>
+          {sub && <span className="text-[9px] text-muted-foreground leading-tight">{sub}</span>}
+        </div>
+      </foreignObject>
+    </>
   )
 }
 
@@ -238,6 +275,7 @@ export function PowerFlow({ detail }: { detail: InverterDetail }) {
             unit={detail.batteryPowerStr || "kW"}
             color={BATTERY_COLOR}
             sub={`${batterySoc.toFixed(0)}% SOC`}
+            socPercent={batterySoc}
           />
         )}
       </svg>
