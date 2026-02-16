@@ -48,53 +48,103 @@ export function getRefreshMs(): number {
   return getRefreshSeconds() * 1000
 }
 
-// --------- Off-peak hours helpers (localStorage) ----------
+// --------- Tariff & off-peak helpers (localStorage) ----------
 
-const STORAGE_KEY_OFFPEAK_START = "solis_offpeak_start"
-const STORAGE_KEY_OFFPEAK_END = "solis_offpeak_end"
-const STORAGE_KEY_PEAK_RATE = "solis_peak_rate"
-const STORAGE_KEY_OFFPEAK_RATE = "solis_offpeak_rate"
-const DEFAULT_OFFPEAK_START = 23 // 11 PM
-const DEFAULT_OFFPEAK_END = 8 // 8 AM
-const DEFAULT_PEAK_RATE = 0 // c/kWh - user sets in settings
-const DEFAULT_OFFPEAK_RATE = 0
+export interface TariffGroup {
+  id: string
+  name: string
+  startHour: number
+  endHour: number
+  rate: number // c/kWh
+  color: string // tailwind-compatible colour for UI
+}
 
 export interface OffPeakSettings {
   startHour: number
   endHour: number
+  tariffGroups: TariffGroup[]
+  /** @deprecated kept for backwards compat reading */
   peakRate: number
   offpeakRate: number
 }
 
+const STORAGE_KEY_OFFPEAK = "solis_offpeak_settings"
+const STORAGE_KEY_TARIFF_GROUPS = "solis_tariff_groups"
+
+const DEFAULT_TARIFF_GROUPS: TariffGroup[] = [
+  { id: "off-peak", name: "Off-Peak", startHour: 23, endHour: 6, rate: 0, color: "indigo" },
+  { id: "standard", name: "Standard", startHour: 6, endHour: 7, rate: 0, color: "sky" },
+  { id: "peak", name: "Peak", startHour: 7, endHour: 10, rate: 0, color: "amber" },
+  { id: "standard-mid", name: "Standard", startHour: 10, endHour: 18, rate: 0, color: "sky" },
+  { id: "peak-eve", name: "Peak", startHour: 18, endHour: 20, rate: 0, color: "amber" },
+  { id: "standard-eve", name: "Standard", startHour: 20, endHour: 23, rate: 0, color: "sky" },
+]
+
 export function getOffPeakSettings(): OffPeakSettings {
-  if (typeof window === "undefined")
-    return {
-      startHour: DEFAULT_OFFPEAK_START,
-      endHour: DEFAULT_OFFPEAK_END,
-      peakRate: DEFAULT_PEAK_RATE,
-      offpeakRate: DEFAULT_OFFPEAK_RATE,
-    }
-  return {
-    startHour: parseInt(localStorage.getItem(STORAGE_KEY_OFFPEAK_START) || "", 10) || DEFAULT_OFFPEAK_START,
-    endHour: parseInt(localStorage.getItem(STORAGE_KEY_OFFPEAK_END) || "", 10) || DEFAULT_OFFPEAK_END,
-    peakRate: parseFloat(localStorage.getItem(STORAGE_KEY_PEAK_RATE) || "") || DEFAULT_PEAK_RATE,
-    offpeakRate: parseFloat(localStorage.getItem(STORAGE_KEY_OFFPEAK_RATE) || "") || DEFAULT_OFFPEAK_RATE,
+  const defaults: OffPeakSettings = {
+    startHour: 23,
+    endHour: 8,
+    tariffGroups: DEFAULT_TARIFF_GROUPS,
+    peakRate: 0,
+    offpeakRate: 0,
   }
+  if (typeof window === "undefined") return defaults
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_OFFPEAK)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      return { ...defaults, ...parsed }
+    }
+    // migrate old keys
+    const start = localStorage.getItem("solis_offpeak_start")
+    const end = localStorage.getItem("solis_offpeak_end")
+    if (start) defaults.startHour = parseInt(start, 10) || 23
+    if (end) defaults.endHour = parseInt(end, 10) || 8
+  } catch { /* ignore */ }
+  return defaults
 }
 
 export function saveOffPeakSettings(s: OffPeakSettings) {
-  localStorage.setItem(STORAGE_KEY_OFFPEAK_START, String(s.startHour))
-  localStorage.setItem(STORAGE_KEY_OFFPEAK_END, String(s.endHour))
-  localStorage.setItem(STORAGE_KEY_PEAK_RATE, String(s.peakRate))
-  localStorage.setItem(STORAGE_KEY_OFFPEAK_RATE, String(s.offpeakRate))
+  localStorage.setItem(STORAGE_KEY_OFFPEAK, JSON.stringify(s))
+}
+
+export function getTariffGroups(): TariffGroup[] {
+  if (typeof window === "undefined") return DEFAULT_TARIFF_GROUPS
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_TARIFF_GROUPS)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed
+    }
+  } catch { /* ignore */ }
+  return DEFAULT_TARIFF_GROUPS
+}
+
+export function saveTariffGroups(groups: TariffGroup[]) {
+  localStorage.setItem(STORAGE_KEY_TARIFF_GROUPS, JSON.stringify(groups))
 }
 
 export function isOffPeakHour(hour: number, settings: OffPeakSettings): boolean {
   if (settings.startHour > settings.endHour) {
-    // Wraps midnight: e.g. 23-8 means 23,0,1,2,...,7 are off-peak
     return hour >= settings.startHour || hour < settings.endHour
   }
   return hour >= settings.startHour && hour < settings.endHour
+}
+
+/** Find the tariff group that applies to a given hour */
+export function getTariffForHour(hour: number, groups: TariffGroup[]): TariffGroup | undefined {
+  return groups.find((g) => {
+    if (g.startHour > g.endHour) {
+      // wraps midnight
+      return hour >= g.startHour || hour < g.endHour
+    }
+    return hour >= g.startHour && hour < g.endHour
+  })
+}
+
+/** Get the rate in c/kWh for a given hour */
+export function getRateForHour(hour: number, groups: TariffGroup[]): number {
+  return getTariffForHour(hour, groups)?.rate || 0
 }
 
 // ---------- Generic fetcher ----------

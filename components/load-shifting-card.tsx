@@ -13,14 +13,24 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   getOffPeakSettings,
   isOffPeakHour,
+  getTariffGroups,
+  getRateForHour,
   type InverterDayEntry,
   type InverterDetail,
   type OffPeakSettings,
+  type TariffGroup,
 } from "@/lib/solis-client"
 
 interface LoadShiftingCardProps {
   detail: InverterDetail
   dayData: InverterDayEntry[]
+}
+
+interface TariffBreakdown {
+  group: TariffGroup
+  gridImport: number
+  consumption: number
+  cost: number
 }
 
 interface LoadShiftingAnalysis {
@@ -37,11 +47,16 @@ interface LoadShiftingAnalysis {
   settings: OffPeakSettings
   offPeakPoints: number
   peakPoints: number
+  tariffBreakdown: TariffBreakdown[]
+  totalGridCost: number
+  shiftedSavings: number
+  hasRates: boolean
 }
 
 function analyzeLoadShifting(
   dayData: InverterDayEntry[],
-  settings: OffPeakSettings
+  settings: OffPeakSettings,
+  tariffGroups: TariffGroup[]
 ): LoadShiftingAnalysis {
   let offPeakGridImport = 0
   let peakGridImport = 0
@@ -53,7 +68,12 @@ function analyzeLoadShifting(
   let offPeakPoints = 0
   let peakPoints = 0
 
-  // Sort data by timestamp
+  // Per-tariff-group accumulators
+  const groupAccum = new Map<string, { gridImport: number; consumption: number; cost: number }>()
+  for (const g of tariffGroups) {
+    groupAccum.set(g.id, { gridImport: 0, consumption: 0, cost: 0 })
+  }
+
   const sorted = [...dayData].sort(
     (a, b) => Number(a.dataTimestamp) - Number(b.dataTimestamp)
   )
@@ -65,7 +85,6 @@ function analyzeLoadShifting(
     const hour = date.getHours()
     const offPeak = isOffPeakHour(hour, settings)
 
-    // Interval in hours (typically 5 min = 1/12 hour)
     let intervalHours = 5 / 60
     if (i > 0) {
       const prev = Number(sorted[i - 1].dataTimestamp)
@@ -73,38 +92,61 @@ function analyzeLoadShifting(
       if (diff > 0 && diff < 1) intervalHours = diff
     }
 
-    const gridPower = entry.pSum || 0 // +ve = importing, -ve = exporting
-    const battPower = entry.batteryPower || 0 // +ve = charging, -ve = discharging
+    const gridPower = entry.pSum || 0
+    const battPower = entry.batteryPower || 0
     const solarPower = entry.pac || 0
     const loadPower = entry.familyLoadPower || 0
 
+    // Accumulate per-tariff-group
+    const rate = getRateForHour(hour, tariffGroups)
+    const matchedGroup = tariffGroups.find((g) => {
+      if (g.startHour > g.endHour) return hour >= g.startHour || hour < g.endHour
+      return hour >= g.startHour && hour < g.endHour
+    })
+    if (matchedGroup) {
+      const acc = groupAccum.get(matchedGroup.id)!
+      const imported = gridPower > 0 ? gridPower * intervalHours : 0
+      acc.gridImport += imported
+      acc.consumption += loadPower * intervalHours
+      acc.cost += imported * (rate / 100) // rate is c/kWh, convert to $/kWh
+    }
+
     if (offPeak) {
       offPeakPoints++
-      // Grid import during off-peak (cheap rate charging)
       if (gridPower > 0) offPeakGridImport += gridPower * intervalHours
-      // Battery charging during off-peak
       if (battPower > 0) offPeakBatteryCharge += battPower * intervalHours
       offPeakConsumption += loadPower * intervalHours
     } else {
       peakPoints++
-      // Grid import during peak (expensive)
       if (gridPower > 0) peakGridImport += gridPower * intervalHours
-      // Battery discharging during peak (load shifting benefit)
       if (battPower < 0) peakBatteryDischarge += Math.abs(battPower) * intervalHours
-      // Solar used directly during peak
       if (solarPower > 0) peakSolarDirect += solarPower * intervalHours
       peakConsumption += loadPower * intervalHours
     }
   }
 
   const totalConsumption = offPeakConsumption + peakConsumption
-  // Energy shifted = battery discharge during peak that was charged during off-peak
   const loadShiftedEnergy = Math.min(offPeakBatteryCharge, peakBatteryDischarge)
-  // Efficiency: how much of the peak consumption was met without peak grid import
   const loadShiftEfficiency =
     peakConsumption > 0
       ? Math.min(100, ((peakBatteryDischarge + peakSolarDirect) / peakConsumption) * 100)
       : 0
+
+  const hasRates = tariffGroups.some((g) => g.rate > 0)
+  const tariffBreakdown: TariffBreakdown[] = tariffGroups
+    .map((g) => {
+      const acc = groupAccum.get(g.id)!
+      return { group: g, ...acc }
+    })
+    .filter((b) => b.gridImport > 0.001 || b.consumption > 0.001)
+
+  const totalGridCost = tariffBreakdown.reduce((sum, b) => sum + b.cost, 0)
+
+  // Savings: energy shifted * (highest rate - lowest rate) / 100
+  const rates = tariffGroups.filter((g) => g.rate > 0).map((g) => g.rate)
+  const maxRate = rates.length > 0 ? Math.max(...rates) : 0
+  const minRate = rates.length > 0 ? Math.min(...rates) : 0
+  const shiftedSavings = hasRates ? loadShiftedEnergy * ((maxRate - minRate) / 100) : 0
 
   return {
     offPeakGridImport,
@@ -120,6 +162,10 @@ function analyzeLoadShifting(
     settings,
     offPeakPoints,
     peakPoints,
+    tariffBreakdown,
+    totalGridCost,
+    shiftedSavings,
+    hasRates,
   }
 }
 
@@ -132,7 +178,8 @@ function formatHour(h: number) {
 export function LoadShiftingCard({ detail, dayData }: LoadShiftingCardProps) {
   const analysis = useMemo(() => {
     const settings = getOffPeakSettings()
-    return analyzeLoadShifting(dayData, settings)
+    const groups = getTariffGroups()
+    return analyzeLoadShifting(dayData, settings, groups)
   }, [dayData])
 
   const hasData = analysis.offPeakPoints > 0 || analysis.peakPoints > 0
@@ -141,11 +188,9 @@ export function LoadShiftingCard({ detail, dayData }: LoadShiftingCardProps) {
     detail.batteryTodayDischargeEnergy > 0 ||
     analysis.offPeakBatteryCharge > 0
 
-  const savingsEstimate =
-    analysis.settings.peakRate > 0 && analysis.settings.offpeakRate > 0
-      ? analysis.loadShiftedEnergy *
-        (analysis.settings.peakRate - analysis.settings.offpeakRate)
-      : null
+  const savingsEstimate = analysis.hasRates && analysis.shiftedSavings > 0
+    ? analysis.shiftedSavings
+    : null
 
   return (
     <Card>
@@ -319,15 +364,13 @@ export function LoadShiftingCard({ detail, dayData }: LoadShiftingCardProps) {
                 </p>
                 <p className="text-xs text-muted-foreground">kWh</p>
               </div>
-              {savingsEstimate !== null && savingsEstimate > 0 ? (
+              {savingsEstimate !== null ? (
                 <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3 text-center">
-                  <p className="text-xs text-muted-foreground">Est. Savings</p>
+                  <p className="text-xs text-muted-foreground">Shift Savings</p>
                   <p className="mt-1 text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
-                    {savingsEstimate.toFixed(2)}
+                    ${savingsEstimate.toFixed(2)}
                   </p>
-                  <p className="text-xs text-muted-foreground">
-                    {analysis.settings.peakRate > 0 ? "c" : ""}
-                  </p>
+                  <p className="text-xs text-muted-foreground">today</p>
                 </div>
               ) : (
                 <div className="rounded-lg border p-3 text-center">
@@ -340,13 +383,82 @@ export function LoadShiftingCard({ detail, dayData }: LoadShiftingCardProps) {
               )}
             </div>
 
+            {/* Tariff breakdown */}
+            {analysis.hasRates && analysis.tariffBreakdown.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  Cost by Tariff Period (Today)
+                </p>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b bg-muted/50">
+                        <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Period</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Hours</th>
+                        <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">Rate</th>
+                        <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">Grid Import</th>
+                        <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">Cost</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {analysis.tariffBreakdown.map((b) => {
+                        const dotColorMap: Record<string, string> = {
+                          indigo: "bg-indigo-500",
+                          sky: "bg-sky-500",
+                          amber: "bg-amber-500",
+                          red: "bg-red-500",
+                          emerald: "bg-emerald-500",
+                          violet: "bg-violet-500",
+                          orange: "bg-orange-500",
+                          rose: "bg-rose-500",
+                          teal: "bg-teal-500",
+                          slate: "bg-slate-500",
+                        }
+                        return (
+                          <tr key={b.group.id}>
+                            <td className="flex items-center gap-2 px-3 py-2 font-medium text-card-foreground">
+                              <span className={`inline-block h-2.5 w-2.5 rounded-full shrink-0 ${dotColorMap[b.group.color] || "bg-primary"}`} />
+                              {b.group.name}
+                            </td>
+                            <td className="px-3 py-2 text-xs text-muted-foreground font-mono">
+                              {formatHour(b.group.startHour)}&ndash;{formatHour(b.group.endHour)}
+                            </td>
+                            <td className="px-3 py-2 text-right tabular-nums text-card-foreground">
+                              {b.group.rate > 0 ? `${b.group.rate}c` : "--"}
+                            </td>
+                            <td className="px-3 py-2 text-right tabular-nums text-card-foreground">
+                              {b.gridImport.toFixed(2)} kWh
+                            </td>
+                            <td className="px-3 py-2 text-right tabular-nums font-medium text-card-foreground">
+                              {b.cost > 0 ? `$${b.cost.toFixed(2)}` : "--"}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t bg-muted/30">
+                        <td colSpan={3} className="px-3 py-2 text-xs font-medium text-muted-foreground">Total Grid Cost</td>
+                        <td className="px-3 py-2 text-right tabular-nums text-card-foreground">
+                          {analysis.tariffBreakdown.reduce((s, b) => s + b.gridImport, 0).toFixed(2)} kWh
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums font-bold text-card-foreground">
+                          {analysis.totalGridCost > 0 ? `$${analysis.totalGridCost.toFixed(2)}` : "--"}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            )}
+
             {/* Explanation */}
             <div className="rounded-lg bg-muted/40 px-4 py-3">
               <p className="text-xs leading-relaxed text-muted-foreground">
                 <strong className="text-card-foreground">Load shifting</strong> moves electricity consumption from expensive peak times to cheap off-peak hours.
                 Your battery charges from the grid at night ({formatHour(analysis.settings.startHour)}&ndash;{formatHour(analysis.settings.endHour)}) at lower rates, then discharges during the day to power your home and avoid costly peak imports.
                 Combined with direct solar usage, this maximizes self-sufficiency and minimizes your electricity bill.
-                Set your tariff rates in Settings to see estimated savings.
+                Configure your tariff rate groups in Settings to see per-period cost breakdowns and savings estimates.
               </p>
             </div>
           </>

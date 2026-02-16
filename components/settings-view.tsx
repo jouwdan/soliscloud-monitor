@@ -31,7 +31,11 @@ import {
   saveRefreshSeconds,
   getOffPeakSettings,
   saveOffPeakSettings,
+  getTariffGroups,
+  saveTariffGroups,
+  type TariffGroup,
 } from "@/lib/solis-client"
+import { Plus, Trash2 } from "lucide-react"
 
 export function SettingsView() {
   const router = useRouter()
@@ -43,6 +47,8 @@ export function SettingsView() {
   const [refreshSaved, setRefreshSaved] = useState(false)
   const [offPeak, setOffPeak] = useState(() => getOffPeakSettings())
   const [offPeakSaved, setOffPeakSaved] = useState(false)
+  const [tariffGroups, setTariffGroups] = useState<TariffGroup[]>(() => getTariffGroups())
+  const [tariffSaved, setTariffSaved] = useState(false)
 
   async function handleTestConnection() {
     setTesting(true)
@@ -244,116 +250,63 @@ export function SettingsView() {
         </CardContent>
       </Card>
 
-      {/* Load Shifting / Off-Peak Hours */}
+      {/* Load Shifting / Off-Peak Window */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base font-semibold text-card-foreground">
             <Moon className="h-4 w-4 text-indigo-400" />
-            Load Shifting &amp; Tariff
+            Load Shifting Window
           </CardTitle>
           <CardDescription>
-            Configure off-peak hours and electricity rates for load shifting analysis.
-            Load shifting charges your battery from the grid during cheap off-peak hours (overnight),
-            then uses that stored energy during expensive peak hours.
+            Set the off-peak charging window for load shifting analysis.
+            Your battery charges from the grid during these hours at the cheapest rate.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-5">
-          {/* Off-peak window */}
-          <div className="space-y-2">
-            <Label className="text-card-foreground">Off-Peak Window</Label>
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="flex items-center gap-2">
-                <Select
-                  value={String(offPeak.startHour)}
-                  onValueChange={(v) => {
-                    setOffPeak((prev) => ({ ...prev, startHour: parseInt(v, 10) }))
-                    setOffPeakSaved(false)
-                  }}
-                >
-                  <SelectTrigger className="w-28 font-mono">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Array.from({ length: 24 }, (_, i) => (
-                      <SelectItem key={i} value={String(i)}>
-                        {i === 0 ? "12 AM" : i < 12 ? `${i} AM` : i === 12 ? "12 PM" : `${i - 12} PM`}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <span className="text-sm text-muted-foreground">to</span>
-                <Select
-                  value={String(offPeak.endHour)}
-                  onValueChange={(v) => {
-                    setOffPeak((prev) => ({ ...prev, endHour: parseInt(v, 10) }))
-                    setOffPeakSaved(false)
-                  }}
-                >
-                  <SelectTrigger className="w-28 font-mono">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Array.from({ length: 24 }, (_, i) => (
-                      <SelectItem key={i} value={String(i)}>
-                        {i === 0 ? "12 AM" : i < 12 ? `${i} AM` : i === 12 ? "12 PM" : `${i - 12} PM`}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Overnight wrap-around is supported (e.g. 11 PM to 8 AM)
-              </p>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2">
+              <Select
+                value={String(offPeak.startHour)}
+                onValueChange={(v) => {
+                  setOffPeak((prev) => ({ ...prev, startHour: parseInt(v, 10) }))
+                  setOffPeakSaved(false)
+                }}
+              >
+                <SelectTrigger className="w-28 font-mono">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from({ length: 24 }, (_, i) => (
+                    <SelectItem key={i} value={String(i)}>
+                      {i === 0 ? "12 AM" : i < 12 ? `${i} AM` : i === 12 ? "12 PM" : `${i - 12} PM`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <span className="text-sm text-muted-foreground">to</span>
+              <Select
+                value={String(offPeak.endHour)}
+                onValueChange={(v) => {
+                  setOffPeak((prev) => ({ ...prev, endHour: parseInt(v, 10) }))
+                  setOffPeakSaved(false)
+                }}
+              >
+                <SelectTrigger className="w-28 font-mono">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from({ length: 24 }, (_, i) => (
+                    <SelectItem key={i} value={String(i)}>
+                      {i === 0 ? "12 AM" : i < 12 ? `${i} AM` : i === 12 ? "12 PM" : `${i - 12} PM`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-          </div>
-
-          {/* Tariff rates */}
-          <div className="space-y-2">
-            <Label className="text-card-foreground">Electricity Tariff Rates (optional)</Label>
             <p className="text-xs text-muted-foreground">
-              Enter rates in cents per kWh to calculate estimated savings from load shifting.
+              Overnight wrap-around supported (e.g. 11 PM to 8 AM)
             </p>
-            <div className="flex flex-wrap items-end gap-4">
-              <div className="space-y-1">
-                <Label htmlFor="peak-rate" className="text-xs text-muted-foreground">
-                  Peak rate (c/kWh)
-                </Label>
-                <Input
-                  id="peak-rate"
-                  type="number"
-                  min={0}
-                  step={0.1}
-                  value={offPeak.peakRate || ""}
-                  placeholder="0"
-                  onChange={(e) => {
-                    setOffPeak((prev) => ({ ...prev, peakRate: parseFloat(e.target.value) || 0 }))
-                    setOffPeakSaved(false)
-                  }}
-                  className="w-28 font-mono tabular-nums"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="offpeak-rate" className="text-xs text-muted-foreground">
-                  Off-peak rate (c/kWh)
-                </Label>
-                <Input
-                  id="offpeak-rate"
-                  type="number"
-                  min={0}
-                  step={0.1}
-                  value={offPeak.offpeakRate || ""}
-                  placeholder="0"
-                  onChange={(e) => {
-                    setOffPeak((prev) => ({ ...prev, offpeakRate: parseFloat(e.target.value) || 0 }))
-                    setOffPeakSaved(false)
-                  }}
-                  className="w-28 font-mono tabular-nums"
-                />
-              </div>
-            </div>
           </div>
-
-          {/* Save */}
           <div className="flex items-center gap-3">
             <Button
               size="sm"
@@ -366,6 +319,256 @@ export function SettingsView() {
               Save
             </Button>
             {offPeakSaved && (
+              <span className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
+                <CheckCircle2 className="h-3 w-3" />
+                Saved
+              </span>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Tariff Rate Groups */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base font-semibold text-card-foreground">
+            <Timer className="h-4 w-4 text-amber-500" />
+            Tariff Rate Groups
+          </CardTitle>
+          <CardDescription>
+            Define your time-of-use electricity tariff periods. Each group covers a time window
+            with its own rate in cents per kWh. This is used to calculate cost savings from load shifting.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* 24-hour visual timeline */}
+          <div className="space-y-1.5">
+            <p className="text-xs font-medium text-muted-foreground">24-Hour Coverage</p>
+            <div className="flex h-7 overflow-hidden rounded-md border">
+              {(() => {
+                const hours = Array.from({ length: 24 }, (_, i) => {
+                  const group = tariffGroups.find((g) => {
+                    if (g.startHour > g.endHour) return i >= g.startHour || i < g.endHour
+                    return i >= g.startHour && i < g.endHour
+                  })
+                  return { hour: i, group }
+                })
+                return hours.map(({ hour, group }) => {
+                  const colorMap: Record<string, string> = {
+                    indigo: "bg-indigo-500/70",
+                    sky: "bg-sky-500/70",
+                    amber: "bg-amber-500/70",
+                    red: "bg-red-500/70",
+                    emerald: "bg-emerald-500/70",
+                    violet: "bg-violet-500/70",
+                    orange: "bg-orange-500/70",
+                    rose: "bg-rose-500/70",
+                    teal: "bg-teal-500/70",
+                    slate: "bg-slate-500/70",
+                  }
+                  const bg = group ? (colorMap[group.color] || "bg-primary/40") : "bg-muted"
+                  return (
+                    <div
+                      key={hour}
+                      className={`flex flex-1 items-center justify-center text-[8px] font-medium text-white ${bg}`}
+                      title={group ? `${group.name} (${group.rate}c/kWh)` : `Uncovered`}
+                    >
+                      {hour % 6 === 0 ? `${hour}` : ""}
+                    </div>
+                  )
+                })
+              })()}
+            </div>
+            <div className="flex justify-between text-[9px] text-muted-foreground px-0.5">
+              <span>12AM</span>
+              <span>6AM</span>
+              <span>12PM</span>
+              <span>6PM</span>
+              <span>12AM</span>
+            </div>
+          </div>
+
+          {/* Group list */}
+          <div className="space-y-3">
+            {tariffGroups.map((group, idx) => {
+              const colorOptions = [
+                { value: "indigo", label: "Indigo" },
+                { value: "sky", label: "Sky" },
+                { value: "amber", label: "Amber" },
+                { value: "red", label: "Red" },
+                { value: "emerald", label: "Green" },
+                { value: "violet", label: "Violet" },
+                { value: "orange", label: "Orange" },
+                { value: "rose", label: "Rose" },
+                { value: "teal", label: "Teal" },
+                { value: "slate", label: "Slate" },
+              ]
+              const dotColorMap: Record<string, string> = {
+                indigo: "bg-indigo-500",
+                sky: "bg-sky-500",
+                amber: "bg-amber-500",
+                red: "bg-red-500",
+                emerald: "bg-emerald-500",
+                violet: "bg-violet-500",
+                orange: "bg-orange-500",
+                rose: "bg-rose-500",
+                teal: "bg-teal-500",
+                slate: "bg-slate-500",
+              }
+              return (
+                <div key={group.id} className="rounded-lg border p-3 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <div className={`h-3 w-3 rounded-full shrink-0 ${dotColorMap[group.color] || "bg-primary"}`} />
+                    <Input
+                      value={group.name}
+                      onChange={(e) => {
+                        const updated = [...tariffGroups]
+                        updated[idx] = { ...group, name: e.target.value }
+                        setTariffGroups(updated)
+                        setTariffSaved(false)
+                      }}
+                      className="h-8 text-sm font-medium flex-1"
+                      placeholder="Group name"
+                    />
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                      onClick={() => {
+                        setTariffGroups(tariffGroups.filter((_, i) => i !== idx))
+                        setTariffSaved(false)
+                      }}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                  <div className="flex flex-wrap items-end gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-[10px] text-muted-foreground">From</Label>
+                      <Select
+                        value={String(group.startHour)}
+                        onValueChange={(v) => {
+                          const updated = [...tariffGroups]
+                          updated[idx] = { ...group, startHour: parseInt(v, 10) }
+                          setTariffGroups(updated)
+                          setTariffSaved(false)
+                        }}
+                      >
+                        <SelectTrigger className="w-24 h-8 text-xs font-mono">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Array.from({ length: 24 }, (_, i) => (
+                            <SelectItem key={i} value={String(i)}>
+                              {i === 0 ? "12 AM" : i < 12 ? `${i} AM` : i === 12 ? "12 PM" : `${i - 12} PM`}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[10px] text-muted-foreground">To</Label>
+                      <Select
+                        value={String(group.endHour)}
+                        onValueChange={(v) => {
+                          const updated = [...tariffGroups]
+                          updated[idx] = { ...group, endHour: parseInt(v, 10) }
+                          setTariffGroups(updated)
+                          setTariffSaved(false)
+                        }}
+                      >
+                        <SelectTrigger className="w-24 h-8 text-xs font-mono">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Array.from({ length: 24 }, (_, i) => (
+                            <SelectItem key={i} value={String(i)}>
+                              {i === 0 ? "12 AM" : i < 12 ? `${i} AM` : i === 12 ? "12 PM" : `${i - 12} PM`}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[10px] text-muted-foreground">Rate (c/kWh)</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        step={0.1}
+                        value={group.rate || ""}
+                        placeholder="0"
+                        onChange={(e) => {
+                          const updated = [...tariffGroups]
+                          updated[idx] = { ...group, rate: parseFloat(e.target.value) || 0 }
+                          setTariffGroups(updated)
+                          setTariffSaved(false)
+                        }}
+                        className="w-24 h-8 text-xs font-mono tabular-nums"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[10px] text-muted-foreground">Color</Label>
+                      <Select
+                        value={group.color}
+                        onValueChange={(v) => {
+                          const updated = [...tariffGroups]
+                          updated[idx] = { ...group, color: v }
+                          setTariffGroups(updated)
+                          setTariffSaved(false)
+                        }}
+                      >
+                        <SelectTrigger className="w-24 h-8 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {colorOptions.map((c) => (
+                            <SelectItem key={c.value} value={c.value}>
+                              <span className="flex items-center gap-1.5">
+                                <span className={`inline-block h-2 w-2 rounded-full ${dotColorMap[c.value] || "bg-primary"}`} />
+                                {c.label}
+                              </span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Add group */}
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full"
+            onClick={() => {
+              const id = `group-${Date.now()}`
+              setTariffGroups([
+                ...tariffGroups,
+                { id, name: "New Period", startHour: 0, endHour: 0, rate: 0, color: "slate" },
+              ])
+              setTariffSaved(false)
+            }}
+          >
+            <Plus className="mr-2 h-3.5 w-3.5" />
+            Add Tariff Period
+          </Button>
+
+          {/* Save */}
+          <div className="flex items-center gap-3">
+            <Button
+              size="sm"
+              onClick={() => {
+                saveTariffGroups(tariffGroups)
+                setTariffSaved(true)
+                setTimeout(() => setTariffSaved(false), 3000)
+              }}
+            >
+              Save Tariff Groups
+            </Button>
+            {tariffSaved && (
               <span className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
                 <CheckCircle2 className="h-3 w-3" />
                 Saved -- reload inverter pages to apply
