@@ -53,8 +53,8 @@ export async function solisApiCall<T = unknown>(
   body: Record<string, unknown>,
   credentials?: { apiId: string; apiSecret: string }
 ): Promise<T> {
-  const apiId = credentials?.apiId || process.env.SOLIS_API_ID || ""
-  const apiSecret = credentials?.apiSecret || process.env.SOLIS_API_SECRET || ""
+  const apiId = (credentials?.apiId || process.env.SOLIS_API_ID || "").trim()
+  const apiSecret = (credentials?.apiSecret || process.env.SOLIS_API_SECRET || "").trim()
 
   if (!apiId || !apiSecret) {
     throw new Error(
@@ -68,6 +68,17 @@ export async function solisApiCall<T = unknown>(
   const date = getGMTDate()
   const canonicalizedResource = endpoint
 
+  const signStr = `POST\n${contentMD5}\n${contentType}\n${date}\n${canonicalizedResource}`
+
+  console.log("[v0] --- Solis Signing Debug ---")
+  console.log("[v0] Body string:", bodyStr)
+  console.log("[v0] Content-MD5:", contentMD5)
+  console.log("[v0] Content-Type:", contentType)
+  console.log("[v0] Date:", date)
+  console.log("[v0] CanonicalizedResource:", canonicalizedResource)
+  console.log("[v0] Sign string (escaped):", JSON.stringify(signStr))
+  console.log("[v0] API ID length:", apiId.length, "Secret length:", apiSecret.length)
+
   const authorization = getAuthorization(
     apiId,
     apiSecret,
@@ -77,7 +88,7 @@ export async function solisApiCall<T = unknown>(
     canonicalizedResource
   )
 
-  console.log("[v0] Solis request ->", endpoint, "date:", date, "md5:", contentMD5)
+  console.log("[v0] Authorization:", authorization)
 
   const response = await fetch(`${SOLIS_API_URL}${endpoint}`, {
     method: "POST",

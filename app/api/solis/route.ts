@@ -11,6 +11,8 @@ function resolveCredentials(headers: Headers) {
   const apiSecret =
     headers.get("x-solis-api-secret") || process.env.SOLIS_API_SECRET || ""
 
+  console.log("[v0] resolveCredentials: apiId length=", apiId.length, "apiSecret length=", apiSecret.length, "source=", headers.get("x-solis-api-id") ? "header" : process.env.SOLIS_API_ID ? "env" : "none")
+
   if (apiId && apiSecret) return { apiId, apiSecret }
   return null
 }
