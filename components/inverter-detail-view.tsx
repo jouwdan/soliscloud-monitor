@@ -19,11 +19,8 @@ import {
   Leaf,
   PlugZap,
   ShieldCheck,
-  Activity,
-  Gauge,
 } from "lucide-react"
 import { useInverterDetail, useInverterDay, useInverterMonth, useInverterYear, getCurrencySettings, getTariffGroups } from "@/lib/solis-client"
-import { MetricCard } from "@/components/metric-card"
 import { PowerFlow } from "@/components/power-flow"
 import { LoadShiftingCard } from "@/components/load-shifting-card"
 import { StatusBadge } from "@/components/status-badge"
@@ -153,208 +150,129 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
         </CardContent>
       </Card>
 
-      {/* Power Flow Diagram */}
-      <Card>
-        <CardHeader className="pb-0">
-          <CardTitle className="text-base font-semibold text-card-foreground">
-            Live Power Flow
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="pt-2">
-          <PowerFlow detail={detail} />
-        </CardContent>
-      </Card>
+      {/* Power Flow + Summary — side by side on desktop */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {/* Power Flow Diagram — left half */}
+        <Card className="lg:row-span-2">
+          <CardHeader className="pb-0">
+            <CardTitle className="text-base font-semibold text-card-foreground">
+              Live Power Flow
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-2">
+            <PowerFlow detail={detail} />
+          </CardContent>
+        </Card>
 
-      {/* Key Metrics */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <MetricCard
-          title="Current Power"
-          value={detail.pac || 0}
-          unit={detail.pacStr}
-          icon={Zap}
-        />
-        <MetricCard
-          title="Today"
-          value={detail.eToday || 0}
-          unit={detail.eTodayStr}
-          icon={Sun}
-        />
-        <MetricCard
-          title="This Month"
-          value={detail.eMonth || 0}
-          unit={detail.eMonthStr}
-          icon={Sun}
-        />
-        <MetricCard
-          title="Total"
-          value={detail.eTotal || 0}
-          unit={detail.eTotalStr}
-          icon={Sun}
-        />
+        {/* Right column — stacked summary cards */}
+        <div className="flex flex-col gap-4">
+          {/* Energy Production */}
+          <Card>
+            <CardContent className="p-4">
+              <div className="grid grid-cols-3 gap-4 text-center">
+                <div>
+                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Today</p>
+                  <p className="mt-1 text-xl font-bold tabular-nums text-card-foreground">{(detail.eToday || 0).toFixed(1)}</p>
+                  <p className="text-[10px] text-muted-foreground">{detail.eTodayStr || "kWh"}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Month</p>
+                  <p className="mt-1 text-xl font-bold tabular-nums text-card-foreground">{(detail.eMonth || 0).toFixed(1)}</p>
+                  <p className="text-[10px] text-muted-foreground">{detail.eMonthStr || "kWh"}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Total</p>
+                  <p className="mt-1 text-xl font-bold tabular-nums text-card-foreground">{(detail.eTotal || 0).toFixed(1)}</p>
+                  <p className="text-[10px] text-muted-foreground">{detail.eTotalStr || "MWh"}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Self-Reliance & Self-Consumption */}
+          {(() => {
+            const produced = detail.eToday || 0
+            const exported = detail.gridSellTodayEnergy || 0
+            const imported = detail.gridPurchasedTodayEnergy || 0
+            const consumed = detail.homeLoadTodayEnergy || 0
+
+            const selfConsumedSolar = Math.max(0, produced - exported)
+            const selfConsumptionRate = produced > 0
+              ? Math.min(100, (selfConsumedSolar / produced) * 100)
+              : 0
+            const selfSupplied = Math.max(0, consumed - imported)
+            const selfRelianceRate = consumed > 0
+              ? Math.min(100, (selfSupplied / consumed) * 100)
+              : 0
+            const gridAvoided = selfSupplied
+            const valueSaved = avgRate > 0 ? gridAvoided * avgRate : 0
+
+            return (
+              <>
+                <Card>
+                  <CardContent className="p-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="text-center">
+                        <ShieldCheck className="mx-auto mb-1 h-4 w-4 text-emerald-500" />
+                        <p className="text-[10px] font-medium text-muted-foreground">Self-Reliance</p>
+                        <p className="mt-0.5 text-2xl font-bold tabular-nums text-card-foreground">{selfRelianceRate.toFixed(0)}%</p>
+                        <div className="mx-auto mt-1.5 h-1.5 w-full max-w-[120px] rounded-full bg-muted">
+                          <div className="h-1.5 rounded-full bg-emerald-500 transition-all" style={{ width: `${selfRelianceRate}%` }} />
+                        </div>
+                        <p className="mt-1 text-[9px] text-muted-foreground">of load met without grid</p>
+                      </div>
+                      <div className="text-center">
+                        <Sun className="mx-auto mb-1 h-4 w-4 text-primary" />
+                        <p className="text-[10px] font-medium text-muted-foreground">Self-Consumption</p>
+                        <p className="mt-0.5 text-2xl font-bold tabular-nums text-card-foreground">{selfConsumptionRate.toFixed(0)}%</p>
+                        <div className="mx-auto mt-1.5 h-1.5 w-full max-w-[120px] rounded-full bg-muted">
+                          <div className="h-1.5 rounded-full bg-primary transition-all" style={{ width: `${selfConsumptionRate}%` }} />
+                        </div>
+                        <p className="mt-1 text-[9px] text-muted-foreground">of production used directly</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Value Savings */}
+                {avgRate > 0 && consumed > 0 && (
+                  <Card>
+                    <CardContent className="p-4">
+                      <div className="grid grid-cols-3 gap-3 text-center">
+                        <div className="rounded-md bg-emerald-500/5 p-2">
+                          <p className="text-[10px] font-medium text-muted-foreground">Saved Today</p>
+                          <p className="mt-0.5 text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{currency.symbol}{valueSaved.toFixed(2)}</p>
+                          <p className="text-[9px] text-muted-foreground">{gridAvoided.toFixed(1)} kWh self-supplied</p>
+                        </div>
+                        <div className="rounded-md border p-2">
+                          <p className="text-[10px] font-medium text-muted-foreground">Grid Cost</p>
+                          <p className="mt-0.5 text-lg font-bold tabular-nums text-card-foreground">{currency.symbol}{(imported * avgRate).toFixed(2)}</p>
+                          <p className="text-[9px] text-muted-foreground">{imported.toFixed(1)} kWh imported</p>
+                        </div>
+                        <div className="rounded-md border p-2">
+                          <p className="text-[10px] font-medium text-muted-foreground">Without Solar</p>
+                          <p className="mt-0.5 text-lg font-bold tabular-nums text-muted-foreground line-through">{currency.symbol}{(consumed * avgRate).toFixed(2)}</p>
+                          <p className="text-[9px] text-muted-foreground">{consumed.toFixed(1)} kWh from grid</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+              </>
+            )
+          })()}
+        </div>
       </div>
 
-      {/* Battery & Grid Real-time */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <MetricCard
-          title="Battery Power"
-          value={detail.batteryPower || 0}
-          unit={detail.batteryPowerStr || "kW"}
-          icon={BatteryCharging}
-          description={`SOC: ${detail.batteryCapacitySoc?.toFixed(0) || 0}% | SOH: ${detail.batteryHealthSoh?.toFixed(0) || 0}%`}
-        />
-        <MetricCard
-          title="Home Load"
-          value={detail.familyLoadPower || 0}
-          unit={detail.familyLoadPowerStr || "kW"}
-          icon={Home}
-          description={`Today: ${detail.homeLoadTodayEnergy?.toFixed(1) || 0} ${detail.homeLoadTodayEnergyStr || "kWh"}`}
-        />
-        <MetricCard
-          title="Grid Power"
-          value={Math.abs(detail.pSum || 0)}
-          unit={detail.pSumStr || "kW"}
-          icon={(detail.pSum || 0) >= 0 ? ArrowDownToLine : ArrowUpFromLine}
-          description={(detail.pSum || 0) >= 0 ? "Importing from grid" : "Exporting to grid"}
-        />
-        <MetricCard
-          title="DC Input Total"
-          value={detail.dcPac || 0}
-          unit={detail.dcPacStr || "W"}
-          icon={Zap}
-          description={detail.bypassLoadPower ? `Bypass: ${detail.bypassLoadPower.toFixed(2)} ${detail.bypassLoadPowerStr || "kW"}` : undefined}
-        />
-      </div>
-
-      {/* Self-Reliance & Energy Flow */}
+      {/* Energy Flow Breakdown */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base font-semibold text-card-foreground">
             <Leaf className="h-4 w-4 text-emerald-500" />
-            Self-Reliance & Energy Flow
+            Energy Flow
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-5">
-            {/* Self-consumption / Self-reliance gauges */}
-            {(() => {
-              const produced = detail.eToday || 0
-              const exported = detail.gridSellTodayEnergy || 0
-              const imported = detail.gridPurchasedTodayEnergy || 0
-              const consumed = detail.homeLoadTodayEnergy || 0
-
-              // Self-consumed solar = production minus what was exported to grid
-              const selfConsumedSolar = Math.max(0, produced - exported)
-              // Self-consumption rate: how much of your production you used yourself
-              const selfConsumptionRate = produced > 0
-                ? Math.min(100, (selfConsumedSolar / produced) * 100)
-                : 0
-              // Self-reliance rate: how much of your consumption was NOT from grid
-              // = (consumption - grid import) / consumption
-              const selfSupplied = Math.max(0, consumed - imported)
-              const selfRelianceRate = consumed > 0
-                ? Math.min(100, (selfSupplied / consumed) * 100)
-                : 0
-
-              const gridAvoided = selfSupplied
-              const valueSaved = avgRate > 0 ? gridAvoided * avgRate : 0
-
-              return (
-                <>
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                    <div className="rounded-lg border p-4 text-center">
-                      <ShieldCheck className="mx-auto mb-2 h-5 w-5 text-emerald-500" />
-                      <p className="text-xs font-medium text-muted-foreground">Self-Reliance</p>
-                      <p className="mt-1 text-2xl font-bold tabular-nums text-card-foreground">
-                        {selfRelianceRate.toFixed(0)}%
-                      </p>
-                      <div className="mt-2 h-2 rounded-full bg-muted">
-                        <div
-                          className="h-2 rounded-full bg-emerald-500 transition-all"
-                          style={{ width: `${selfRelianceRate}%` }}
-                        />
-                      </div>
-                      <p className="mt-1.5 text-xs text-muted-foreground">
-                        of load met without grid
-                      </p>
-                    </div>
-
-                    <div className="rounded-lg border p-4 text-center">
-                      <Sun className="mx-auto mb-2 h-5 w-5 text-primary" />
-                      <p className="text-xs font-medium text-muted-foreground">Self-Consumption</p>
-                      <p className="mt-1 text-2xl font-bold tabular-nums text-card-foreground">
-                        {selfConsumptionRate.toFixed(0)}%
-                      </p>
-                      <div className="mt-2 h-2 rounded-full bg-muted">
-                        <div
-                          className="h-2 rounded-full bg-primary transition-all"
-                          style={{ width: `${selfConsumptionRate}%` }}
-                        />
-                      </div>
-                      <p className="mt-1.5 text-xs text-muted-foreground">
-                        of production used directly
-                      </p>
-                    </div>
-
-                    <div className="rounded-lg border p-4 text-center">
-                      <Activity className="mx-auto mb-2 h-5 w-5 text-blue-500" />
-                      <p className="text-xs font-medium text-muted-foreground">Grid Power</p>
-                      <p className="mt-1 text-2xl font-bold tabular-nums text-card-foreground">
-                        {Math.abs(detail.pSum || 0).toFixed(2)}
-                      </p>
-                      <p className="text-sm text-muted-foreground">{detail.pSumStr || "kW"}</p>
-                      <p className="mt-1 text-xs font-medium" style={{ color: (detail.pSum || 0) >= 0 ? "hsl(var(--chart-5))" : "hsl(var(--chart-4))" }}>
-                        {(detail.pSum || 0) >= 0 ? "Importing" : "Exporting"}
-                      </p>
-                    </div>
-
-                    <div className="rounded-lg border p-4 text-center">
-                      <Gauge className="mx-auto mb-2 h-5 w-5 text-muted-foreground" />
-                      <p className="text-xs font-medium text-muted-foreground">Home Load</p>
-                      <p className="mt-1 text-2xl font-bold tabular-nums text-card-foreground">
-                        {(detail.familyLoadPower || 0).toFixed(2)}
-                      </p>
-                      <p className="text-sm text-muted-foreground">{detail.familyLoadPowerStr || "kW"}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Today: {(detail.homeLoadTodayEnergy || 0).toFixed(1)} {detail.homeLoadTodayEnergyStr || "kWh"}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Value Savings Summary */}
-                  {avgRate > 0 && consumed > 0 && (
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                      <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-4 text-center">
-                        <p className="text-xs font-medium text-muted-foreground">Value Saved Today</p>
-                        <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
-                          {currency.symbol}{valueSaved.toFixed(2)}
-                        </p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {gridAvoided.toFixed(1)} kWh self-supplied
-                        </p>
-                      </div>
-                      <div className="rounded-lg border p-4 text-center">
-                        <p className="text-xs font-medium text-muted-foreground">Grid Cost Today</p>
-                        <p className="mt-1 text-2xl font-bold tabular-nums text-card-foreground">
-                          {currency.symbol}{(imported * avgRate).toFixed(2)}
-                        </p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {imported.toFixed(1)} kWh imported
-                        </p>
-                      </div>
-                      <div className="rounded-lg border p-4 text-center">
-                        <p className="text-xs font-medium text-muted-foreground">Without Solar</p>
-                        <p className="mt-1 text-2xl font-bold tabular-nums text-muted-foreground line-through">
-                          {currency.symbol}{(consumed * avgRate).toFixed(2)}
-                        </p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          if all {consumed.toFixed(1)} kWh from grid
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </>
-              )
-            })()}
-
+        <CardContent>
             {/* Detailed energy breakdown table */}
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
