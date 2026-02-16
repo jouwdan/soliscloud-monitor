@@ -15,10 +15,13 @@ import {
   isOffPeakHour,
   getTariffGroups,
   getRateForHour,
+  getCurrencySettings,
+  toKW,
   type InverterDayEntry,
   type InverterDetail,
   type OffPeakSettings,
   type TariffGroup,
+  type CurrencySettings,
 } from "@/lib/solis-client"
 
 interface LoadShiftingCardProps {
@@ -80,22 +83,26 @@ function analyzeLoadShifting(
 
   for (let i = 0; i < sorted.length; i++) {
     const entry = sorted[i]
-    const ts = Number(entry.dataTimestamp)
+    let ts = Number(entry.dataTimestamp)
+    // Normalise timestamp: if it looks like seconds (< 1e12), convert to ms
+    if (ts > 0 && ts < 1e12) ts = ts * 1000
     const date = new Date(ts)
     const hour = date.getHours()
     const offPeak = isOffPeakHour(hour, settings)
 
     let intervalHours = 5 / 60
     if (i > 0) {
-      const prev = Number(sorted[i - 1].dataTimestamp)
+      let prev = Number(sorted[i - 1].dataTimestamp)
+      if (prev > 0 && prev < 1e12) prev = prev * 1000
       const diff = (ts - prev) / (1000 * 60 * 60)
       if (diff > 0 && diff < 1) intervalHours = diff
     }
 
-    const gridPower = entry.pSum || 0
-    const battPower = entry.batteryPower || 0
-    const solarPower = entry.pac || 0
-    const loadPower = entry.familyLoadPower || 0
+    // Normalise all power readings to kW
+    const gridPower = toKW(entry.pSum, entry.pSumStr)
+    const battPower = toKW(entry.batteryPower, entry.batteryPowerStr)
+    const solarPower = toKW(entry.pac, entry.pacStr)
+    const loadPower = toKW(entry.familyLoadPower, entry.familyLoadPowerStr)
 
     // Accumulate per-tariff-group
     const rate = getRateForHour(hour, tariffGroups)
@@ -108,7 +115,7 @@ function analyzeLoadShifting(
       const imported = gridPower > 0 ? gridPower * intervalHours : 0
       acc.gridImport += imported
       acc.consumption += loadPower * intervalHours
-      acc.cost += imported * (rate / 100) // rate is c/kWh, convert to $/kWh
+      acc.cost += imported * rate // rate is in currency/kWh as entered by user
     }
 
     if (offPeak) {
@@ -142,11 +149,11 @@ function analyzeLoadShifting(
 
   const totalGridCost = tariffBreakdown.reduce((sum, b) => sum + b.cost, 0)
 
-  // Savings: energy shifted * (highest rate - lowest rate) / 100
+  // Savings: energy shifted * (highest rate - lowest rate)
   const rates = tariffGroups.filter((g) => g.rate > 0).map((g) => g.rate)
   const maxRate = rates.length > 0 ? Math.max(...rates) : 0
   const minRate = rates.length > 0 ? Math.min(...rates) : 0
-  const shiftedSavings = hasRates ? loadShiftedEnergy * ((maxRate - minRate) / 100) : 0
+  const shiftedSavings = hasRates ? loadShiftedEnergy * (maxRate - minRate) : 0
 
   return {
     offPeakGridImport,
@@ -176,6 +183,8 @@ function formatHour(h: number) {
 }
 
 export function LoadShiftingCard({ detail, dayData }: LoadShiftingCardProps) {
+  const currency = useMemo(() => getCurrencySettings(), [])
+
   const analysis = useMemo(() => {
     const settings = getOffPeakSettings()
     const groups = getTariffGroups()
@@ -368,7 +377,7 @@ export function LoadShiftingCard({ detail, dayData }: LoadShiftingCardProps) {
                 <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3 text-center">
                   <p className="text-xs text-muted-foreground">Shift Savings</p>
                   <p className="mt-1 text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
-                    ${savingsEstimate.toFixed(2)}
+                    {currency.symbol}{savingsEstimate.toFixed(2)}
                   </p>
                   <p className="text-xs text-muted-foreground">today</p>
                 </div>
@@ -424,13 +433,13 @@ export function LoadShiftingCard({ detail, dayData }: LoadShiftingCardProps) {
                               {formatHour(b.group.startHour)}&ndash;{formatHour(b.group.endHour)}
                             </td>
                             <td className="px-3 py-2 text-right tabular-nums text-card-foreground">
-                              {b.group.rate > 0 ? `${b.group.rate}c` : "--"}
+                              {b.group.rate > 0 ? `${currency.symbol}${b.group.rate}` : "--"}
                             </td>
                             <td className="px-3 py-2 text-right tabular-nums text-card-foreground">
                               {b.gridImport.toFixed(2)} kWh
                             </td>
                             <td className="px-3 py-2 text-right tabular-nums font-medium text-card-foreground">
-                              {b.cost > 0 ? `$${b.cost.toFixed(2)}` : "--"}
+                              {b.cost > 0 ? `${currency.symbol}${b.cost.toFixed(2)}` : "--"}
                             </td>
                           </tr>
                         )
@@ -443,7 +452,7 @@ export function LoadShiftingCard({ detail, dayData }: LoadShiftingCardProps) {
                           {analysis.tariffBreakdown.reduce((s, b) => s + b.gridImport, 0).toFixed(2)} kWh
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums font-bold text-card-foreground">
-                          {analysis.totalGridCost > 0 ? `$${analysis.totalGridCost.toFixed(2)}` : "--"}
+                          {analysis.totalGridCost > 0 ? `${currency.symbol}${analysis.totalGridCost.toFixed(2)}` : "--"}
                         </td>
                       </tr>
                     </tfoot>

@@ -147,6 +147,58 @@ export function getRateForHour(hour: number, groups: TariffGroup[]): number {
   return getTariffForHour(hour, groups)?.rate || 0
 }
 
+// --------- Currency helpers (localStorage) ----------
+
+const STORAGE_KEY_CURRENCY = "solis_currency"
+
+export interface CurrencySettings {
+  symbol: string
+  code: string
+}
+
+const CURRENCY_OPTIONS: CurrencySettings[] = [
+  { symbol: "\u20AC", code: "EUR" },
+  { symbol: "$", code: "USD" },
+  { symbol: "\u00A3", code: "GBP" },
+  { symbol: "R", code: "ZAR" },
+  { symbol: "A$", code: "AUD" },
+  { symbol: "C$", code: "CAD" },
+  { symbol: "CHF", code: "CHF" },
+  { symbol: "\u00A5", code: "JPY" },
+  { symbol: "\u20B9", code: "INR" },
+  { symbol: "R$", code: "BRL" },
+]
+
+export { CURRENCY_OPTIONS }
+
+export function getCurrencySettings(): CurrencySettings {
+  if (typeof window === "undefined") return CURRENCY_OPTIONS[0]
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_CURRENCY)
+    if (raw) return JSON.parse(raw)
+  } catch { /* ignore */ }
+  return CURRENCY_OPTIONS[0]
+}
+
+export function saveCurrencySettings(c: CurrencySettings) {
+  localStorage.setItem(STORAGE_KEY_CURRENCY, JSON.stringify(c))
+}
+
+// --------- Unit normalisation helpers ----------
+
+/**
+ * Normalise a power reading to kW.
+ * Solis returns pac, batteryPower, pSum etc. sometimes in W, sometimes in kW.
+ * The companion `Str` field tells us the unit.
+ */
+export function toKW(value: number | undefined, unitStr: string | undefined): number {
+  if (value === undefined || value === null) return 0
+  const u = (unitStr || "").toLowerCase().trim()
+  if (u === "w") return value / 1000
+  // already kW or unknown – treat as kW
+  return value
+}
+
 // ---------- Generic fetcher ----------
 
 async function solisFetcher<T = unknown>([endpoint, body]: [

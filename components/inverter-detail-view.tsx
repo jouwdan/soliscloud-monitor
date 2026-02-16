@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import Link from "next/link"
 import { format } from "date-fns"
 import {
@@ -22,7 +22,7 @@ import {
   Activity,
   Gauge,
 } from "lucide-react"
-import { useInverterDetail, useInverterDay, useInverterMonth, useInverterYear } from "@/lib/solis-client"
+import { useInverterDetail, useInverterDay, useInverterMonth, useInverterYear, getCurrencySettings, getTariffGroups } from "@/lib/solis-client"
 import { MetricCard } from "@/components/metric-card"
 import { PowerFlow } from "@/components/power-flow"
 import { LoadShiftingCard } from "@/components/load-shifting-card"
@@ -46,6 +46,13 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
   const today = format(new Date(), "yyyy-MM-dd")
   const thisMonth = format(new Date(), "yyyy-MM")
   const thisYear = format(new Date(), "yyyy")
+
+  const currency = useMemo(() => getCurrencySettings(), [])
+  const avgRate = useMemo(() => {
+    const groups = getTariffGroups()
+    const rates = groups.filter((g) => g.rate > 0).map((g) => g.rate)
+    return rates.length > 0 ? rates.reduce((a, b) => a + b, 0) / rates.length : 0
+  }, [])
 
   const { data: dayData } = useInverterDay(id, sn, today, "8")
   const { data: monthData } = useInverterMonth(id, sn, thisMonth)
@@ -247,66 +254,104 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
                 ? Math.min(100, (selfSupplied / consumed) * 100)
                 : 0
 
+              const gridAvoided = selfSupplied
+              const valueSaved = avgRate > 0 ? gridAvoided * avgRate : 0
+
               return (
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                  <div className="rounded-lg border p-4 text-center">
-                    <ShieldCheck className="mx-auto mb-2 h-5 w-5 text-emerald-500" />
-                    <p className="text-xs font-medium text-muted-foreground">Self-Reliance</p>
-                    <p className="mt-1 text-2xl font-bold tabular-nums text-card-foreground">
-                      {selfRelianceRate.toFixed(0)}%
-                    </p>
-                    <div className="mt-2 h-2 rounded-full bg-muted">
-                      <div
-                        className="h-2 rounded-full bg-emerald-500 transition-all"
-                        style={{ width: `${selfRelianceRate}%` }}
-                      />
+                <>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="rounded-lg border p-4 text-center">
+                      <ShieldCheck className="mx-auto mb-2 h-5 w-5 text-emerald-500" />
+                      <p className="text-xs font-medium text-muted-foreground">Self-Reliance</p>
+                      <p className="mt-1 text-2xl font-bold tabular-nums text-card-foreground">
+                        {selfRelianceRate.toFixed(0)}%
+                      </p>
+                      <div className="mt-2 h-2 rounded-full bg-muted">
+                        <div
+                          className="h-2 rounded-full bg-emerald-500 transition-all"
+                          style={{ width: `${selfRelianceRate}%` }}
+                        />
+                      </div>
+                      <p className="mt-1.5 text-xs text-muted-foreground">
+                        of load met without grid
+                      </p>
                     </div>
-                    <p className="mt-1.5 text-xs text-muted-foreground">
-                      of load met without grid
-                    </p>
-                  </div>
 
-                  <div className="rounded-lg border p-4 text-center">
-                    <Sun className="mx-auto mb-2 h-5 w-5 text-primary" />
-                    <p className="text-xs font-medium text-muted-foreground">Self-Consumption</p>
-                    <p className="mt-1 text-2xl font-bold tabular-nums text-card-foreground">
-                      {selfConsumptionRate.toFixed(0)}%
-                    </p>
-                    <div className="mt-2 h-2 rounded-full bg-muted">
-                      <div
-                        className="h-2 rounded-full bg-primary transition-all"
-                        style={{ width: `${selfConsumptionRate}%` }}
-                      />
+                    <div className="rounded-lg border p-4 text-center">
+                      <Sun className="mx-auto mb-2 h-5 w-5 text-primary" />
+                      <p className="text-xs font-medium text-muted-foreground">Self-Consumption</p>
+                      <p className="mt-1 text-2xl font-bold tabular-nums text-card-foreground">
+                        {selfConsumptionRate.toFixed(0)}%
+                      </p>
+                      <div className="mt-2 h-2 rounded-full bg-muted">
+                        <div
+                          className="h-2 rounded-full bg-primary transition-all"
+                          style={{ width: `${selfConsumptionRate}%` }}
+                        />
+                      </div>
+                      <p className="mt-1.5 text-xs text-muted-foreground">
+                        of production used directly
+                      </p>
                     </div>
-                    <p className="mt-1.5 text-xs text-muted-foreground">
-                      of production used directly
-                    </p>
+
+                    <div className="rounded-lg border p-4 text-center">
+                      <Activity className="mx-auto mb-2 h-5 w-5 text-blue-500" />
+                      <p className="text-xs font-medium text-muted-foreground">Grid Power</p>
+                      <p className="mt-1 text-2xl font-bold tabular-nums text-card-foreground">
+                        {Math.abs(detail.pSum || 0).toFixed(2)}
+                      </p>
+                      <p className="text-sm text-muted-foreground">{detail.pSumStr || "kW"}</p>
+                      <p className="mt-1 text-xs font-medium" style={{ color: (detail.pSum || 0) >= 0 ? "hsl(var(--chart-5))" : "hsl(var(--chart-4))" }}>
+                        {(detail.pSum || 0) >= 0 ? "Importing" : "Exporting"}
+                      </p>
+                    </div>
+
+                    <div className="rounded-lg border p-4 text-center">
+                      <Gauge className="mx-auto mb-2 h-5 w-5 text-muted-foreground" />
+                      <p className="text-xs font-medium text-muted-foreground">Home Load</p>
+                      <p className="mt-1 text-2xl font-bold tabular-nums text-card-foreground">
+                        {(detail.familyLoadPower || 0).toFixed(2)}
+                      </p>
+                      <p className="text-sm text-muted-foreground">{detail.familyLoadPowerStr || "kW"}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Today: {(detail.homeLoadTodayEnergy || 0).toFixed(1)} {detail.homeLoadTodayEnergyStr || "kWh"}
+                      </p>
+                    </div>
                   </div>
 
-                  <div className="rounded-lg border p-4 text-center">
-                    <Activity className="mx-auto mb-2 h-5 w-5 text-blue-500" />
-                    <p className="text-xs font-medium text-muted-foreground">Grid Power</p>
-                    <p className="mt-1 text-2xl font-bold tabular-nums text-card-foreground">
-                      {Math.abs(detail.pSum || 0).toFixed(2)}
-                    </p>
-                    <p className="text-sm text-muted-foreground">{detail.pSumStr || "kW"}</p>
-                    <p className="mt-1 text-xs font-medium" style={{ color: (detail.pSum || 0) >= 0 ? "hsl(var(--chart-5))" : "hsl(var(--chart-4))" }}>
-                      {(detail.pSum || 0) >= 0 ? "Importing" : "Exporting"}
-                    </p>
-                  </div>
-
-                  <div className="rounded-lg border p-4 text-center">
-                    <Gauge className="mx-auto mb-2 h-5 w-5 text-muted-foreground" />
-                    <p className="text-xs font-medium text-muted-foreground">Home Load</p>
-                    <p className="mt-1 text-2xl font-bold tabular-nums text-card-foreground">
-                      {(detail.familyLoadPower || 0).toFixed(2)}
-                    </p>
-                    <p className="text-sm text-muted-foreground">{detail.familyLoadPowerStr || "kW"}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Today: {(detail.homeLoadTodayEnergy || 0).toFixed(1)} {detail.homeLoadTodayEnergyStr || "kWh"}
-                    </p>
-                  </div>
-                </div>
+                  {/* Value Savings Summary */}
+                  {avgRate > 0 && consumed > 0 && (
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                      <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-4 text-center">
+                        <p className="text-xs font-medium text-muted-foreground">Value Saved Today</p>
+                        <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+                          {currency.symbol}{valueSaved.toFixed(2)}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {gridAvoided.toFixed(1)} kWh self-supplied
+                        </p>
+                      </div>
+                      <div className="rounded-lg border p-4 text-center">
+                        <p className="text-xs font-medium text-muted-foreground">Grid Cost Today</p>
+                        <p className="mt-1 text-2xl font-bold tabular-nums text-card-foreground">
+                          {currency.symbol}{(imported * avgRate).toFixed(2)}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {imported.toFixed(1)} kWh imported
+                        </p>
+                      </div>
+                      <div className="rounded-lg border p-4 text-center">
+                        <p className="text-xs font-medium text-muted-foreground">Without Solar</p>
+                        <p className="mt-1 text-2xl font-bold tabular-nums text-muted-foreground line-through">
+                          {currency.symbol}{(consumed * avgRate).toFixed(2)}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          if all {consumed.toFixed(1)} kWh from grid
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </>
               )
             })()}
 

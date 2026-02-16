@@ -33,9 +33,13 @@ import {
   saveOffPeakSettings,
   getTariffGroups,
   saveTariffGroups,
+  getCurrencySettings,
+  saveCurrencySettings,
+  CURRENCY_OPTIONS,
   type TariffGroup,
+  type CurrencySettings,
 } from "@/lib/solis-client"
-import { Plus, Trash2 } from "lucide-react"
+import { Plus, Trash2, Coins } from "lucide-react"
 
 export function SettingsView() {
   const router = useRouter()
@@ -49,6 +53,8 @@ export function SettingsView() {
   const [offPeakSaved, setOffPeakSaved] = useState(false)
   const [tariffGroups, setTariffGroups] = useState<TariffGroup[]>(() => getTariffGroups())
   const [tariffSaved, setTariffSaved] = useState(false)
+  const [currency, setCurrency] = useState<CurrencySettings>(() => getCurrencySettings())
+  const [currencySaved, setCurrencySaved] = useState(false)
 
   async function handleTestConnection() {
     setTesting(true)
@@ -328,6 +334,48 @@ export function SettingsView() {
         </CardContent>
       </Card>
 
+      {/* Currency */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base font-semibold text-card-foreground">
+            <Coins className="h-4 w-4 text-amber-500" />
+            Currency
+          </CardTitle>
+          <CardDescription>
+            Select your local currency for cost and savings display.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap gap-2">
+            {CURRENCY_OPTIONS.map((c) => (
+              <button
+                key={c.code}
+                type="button"
+                onClick={() => {
+                  setCurrency(c)
+                  saveCurrencySettings(c)
+                  setCurrencySaved(true)
+                  setTimeout(() => setCurrencySaved(false), 3000)
+                }}
+                className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
+                  currency.code === c.code
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border text-muted-foreground hover:border-primary/50 hover:text-card-foreground"
+                }`}
+              >
+                {c.symbol} {c.code}
+              </button>
+            ))}
+          </div>
+          {currencySaved && (
+            <span className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
+              <CheckCircle2 className="h-3 w-3" />
+              Saved
+            </span>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Tariff Rate Groups */}
       <Card>
         <CardHeader>
@@ -337,7 +385,7 @@ export function SettingsView() {
           </CardTitle>
           <CardDescription>
             Define your time-of-use electricity tariff periods. Each group covers a time window
-            with its own rate in cents per kWh. This is used to calculate cost savings from load shifting.
+            with its own rate in {currency.code}/kWh. This is used to calculate cost savings from load shifting.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -371,7 +419,7 @@ export function SettingsView() {
                     <div
                       key={hour}
                       className={`flex flex-1 items-center justify-center text-[8px] font-medium text-white ${bg}`}
-                      title={group ? `${group.name} (${group.rate}c/kWh)` : `Uncovered`}
+                      title={group ? `${group.name} (${currency.symbol}${group.rate}/kWh)` : `Uncovered`}
                     >
                       {hour % 6 === 0 ? `${hour}` : ""}
                     </div>
@@ -490,7 +538,7 @@ export function SettingsView() {
                       </Select>
                     </div>
                     <div className="space-y-1">
-                      <Label className="text-[10px] text-muted-foreground">Rate (c/kWh)</Label>
+                      <Label className="text-[10px] text-muted-foreground">Rate ({currency.symbol}/kWh)</Label>
                       <Input
                         type="number"
                         min={0}
