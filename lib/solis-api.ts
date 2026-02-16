@@ -41,10 +41,11 @@ function getAuthorization(
 
 export async function solisApiCall<T = unknown>(
   endpoint: string,
-  body: Record<string, unknown>
+  body: Record<string, unknown>,
+  credentials?: { apiId: string; apiSecret: string }
 ): Promise<T> {
-  const apiId = process.env.SOLIS_API_ID
-  const apiSecret = process.env.SOLIS_API_SECRET
+  const apiId = credentials?.apiId || process.env.SOLIS_API_ID
+  const apiSecret = credentials?.apiSecret || process.env.SOLIS_API_SECRET
 
   if (!apiId || !apiSecret) {
     throw new Error("SOLIS_API_ID and SOLIS_API_SECRET must be set")

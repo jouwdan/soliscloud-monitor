@@ -1,31 +1,32 @@
 import { NextRequest, NextResponse } from "next/server"
 import { solisApiCall } from "@/lib/solis-api"
 
-function credentialsConfigured(): boolean {
-  return Boolean(process.env.SOLIS_API_ID && process.env.SOLIS_API_SECRET)
-}
+/**
+ * Resolve credentials: request headers first, then env vars.
+ * Returns null when neither source provides both values.
+ */
+function resolveCredentials(headers: Headers) {
+  const apiId =
+    headers.get("x-solis-api-id") || process.env.SOLIS_API_ID || ""
+  const apiSecret =
+    headers.get("x-solis-api-secret") || process.env.SOLIS_API_SECRET || ""
 
-/** GET /api/solis  — lightweight health / config check */
-export async function GET() {
-  if (!credentialsConfigured()) {
-    return NextResponse.json(
-      { configured: false, error: "NOT_CONFIGURED" },
-      { status: 200 }
-    )
-  }
-  return NextResponse.json({ configured: true })
+  if (apiId && apiSecret) return { apiId, apiSecret }
+  return null
 }
 
 /** POST /api/solis  — proxy any SolisCloud API call */
 export async function POST(request: NextRequest) {
-  if (!credentialsConfigured()) {
+  const creds = resolveCredentials(request.headers)
+
+  if (!creds) {
     return NextResponse.json(
       {
-        error: "NOT_CONFIGURED",
+        error: "NO_CREDENTIALS",
         message:
-          "SOLIS_API_ID and SOLIS_API_SECRET environment variables are not set. Add them in the Vars section of the sidebar.",
+          "No API credentials found. Enter your Solis API ID and Secret to continue.",
       },
-      { status: 503 }
+      { status: 401 }
     )
   }
 
@@ -39,7 +40,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const data = await solisApiCall(endpoint, body || {})
+    const data = await solisApiCall(endpoint, body || {}, creds)
     return NextResponse.json({ data })
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error"

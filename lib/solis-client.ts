@@ -1,29 +1,29 @@
 import useSWR from "swr"
 
-// ---------- Connection status ----------
+// --------- Credential helpers (localStorage) ----------
 
-async function statusFetcher(): Promise<{ configured: boolean }> {
-  const res = await fetch("/api/solis")
-  if (!res.ok) throw new Error("Health check failed")
-  return res.json()
+const STORAGE_KEY_ID = "solis_api_id"
+const STORAGE_KEY_SECRET = "solis_api_secret"
+
+export function getSavedCredentials(): {
+  apiId: string
+  apiSecret: string
+} | null {
+  if (typeof window === "undefined") return null
+  const apiId = localStorage.getItem(STORAGE_KEY_ID)
+  const apiSecret = localStorage.getItem(STORAGE_KEY_SECRET)
+  if (apiId && apiSecret) return { apiId, apiSecret }
+  return null
 }
 
-/**
- * Lightweight check: are SOLIS_API_ID / SOLIS_API_SECRET set on the server?
- * Returns `{ configured, isLoading }` so views can gate API calls.
- */
-export function useConnectionStatus() {
-  const { data, error, isLoading, mutate } = useSWR(
-    "solis-status",
-    statusFetcher,
-    { revalidateOnFocus: false, dedupingInterval: 30000 }
-  )
-  return {
-    configured: data?.configured ?? false,
-    isLoading,
-    error,
-    recheck: mutate,
-  }
+export function saveCredentials(apiId: string, apiSecret: string) {
+  localStorage.setItem(STORAGE_KEY_ID, apiId)
+  localStorage.setItem(STORAGE_KEY_SECRET, apiSecret)
+}
+
+export function clearCredentials() {
+  localStorage.removeItem(STORAGE_KEY_ID)
+  localStorage.removeItem(STORAGE_KEY_SECRET)
 }
 
 // ---------- Generic fetcher ----------
@@ -32,9 +32,19 @@ async function solisFetcher<T = unknown>([endpoint, body]: [
   string,
   Record<string, unknown>,
 ]): Promise<T> {
+  const creds = getSavedCredentials()
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  }
+  if (creds) {
+    headers["x-solis-api-id"] = creds.apiId
+    headers["x-solis-api-secret"] = creds.apiSecret
+  }
+
   const res = await fetch("/api/solis", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify({ endpoint, body }),
   })
 

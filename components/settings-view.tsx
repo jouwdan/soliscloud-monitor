@@ -1,23 +1,44 @@
 "use client"
 
 import { useState } from "react"
-import { Sun, ExternalLink, CheckCircle2, AlertTriangle, RefreshCw } from "lucide-react"
+import { useRouter } from "next/navigation"
+import {
+  Sun,
+  ExternalLink,
+  CheckCircle2,
+  AlertTriangle,
+  RefreshCw,
+  LogOut,
+} from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { useStationList } from "@/lib/solis-client"
+import {
+  useStationList,
+  getSavedCredentials,
+  clearCredentials,
+} from "@/lib/solis-client"
 
 export function SettingsView() {
+  const router = useRouter()
   const { data: stationData, isLoading, mutate } = useStationList()
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<"success" | "error" | null>(null)
+  const creds = getSavedCredentials()
 
   async function handleTestConnection() {
     setTesting(true)
     setTestResult(null)
     try {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      }
+      if (creds) {
+        headers["x-solis-api-id"] = creds.apiId
+        headers["x-solis-api-secret"] = creds.apiSecret
+      }
       const res = await fetch("/api/solis", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           endpoint: "/v1/api/userStationList",
           body: { pageNo: 1, pageSize: 1 },
@@ -32,7 +53,16 @@ export function SettingsView() {
     }
   }
 
+  function handleDisconnect() {
+    clearCredentials()
+    router.push("/")
+    router.refresh()
+  }
+
   const stations = stationData?.page?.records || []
+  const maskedId = creds
+    ? creds.apiId.slice(0, 4) + "..." + creds.apiId.slice(-4)
+    : "Not set"
 
   return (
     <div className="space-y-6 p-6">
@@ -51,32 +81,26 @@ export function SettingsView() {
             SolisCloud API Connection
           </CardTitle>
           <CardDescription>
-            Your API credentials are managed via environment variables for security.
+            Your credentials are stored locally in this browser.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="rounded-md border p-3">
               <p className="text-xs font-medium text-muted-foreground">API ID</p>
-              <p className="mt-1 font-mono text-xs text-card-foreground">
-                SOLIS_API_ID
-              </p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                Set via environment variable
+              <p className="mt-1 font-mono text-sm text-card-foreground">
+                {maskedId}
               </p>
             </div>
             <div className="rounded-md border p-3">
               <p className="text-xs font-medium text-muted-foreground">API Secret</p>
-              <p className="mt-1 font-mono text-xs text-card-foreground">
-                SOLIS_API_SECRET
-              </p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                Set via environment variable
+              <p className="mt-1 font-mono text-sm text-card-foreground">
+                {creds ? "********" : "Not set"}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <Button onClick={handleTestConnection} disabled={testing} size="sm">
               {testing ? (
                 <>
@@ -87,6 +111,15 @@ export function SettingsView() {
                 "Test Connection"
               )}
             </Button>
+            <Button
+              onClick={handleDisconnect}
+              variant="outline"
+              size="sm"
+              className="text-destructive border-destructive/30 hover:bg-destructive/10"
+            >
+              <LogOut className="mr-2 h-3 w-3" />
+              Disconnect
+            </Button>
             {testResult === "success" && (
               <span className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
                 <CheckCircle2 className="h-3 w-3" />
@@ -96,7 +129,7 @@ export function SettingsView() {
             {testResult === "error" && (
               <span className="flex items-center gap-1 text-xs text-destructive">
                 <AlertTriangle className="h-3 w-3" />
-                Connection failed. Check your credentials.
+                Connection failed
               </span>
             )}
           </div>
@@ -125,16 +158,7 @@ export function SettingsView() {
             </li>
             <li>Navigate to Account &rarr; Basic Settings &rarr; API Management</li>
             <li>Generate or copy your API ID and API Secret</li>
-            <li>
-              Add them as environment variables:
-              <code className="ml-1 rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-card-foreground">
-                SOLIS_API_ID
-              </code>{" "}
-              and{" "}
-              <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-card-foreground">
-                SOLIS_API_SECRET
-              </code>
-            </li>
+            <li>Paste them in the login form when you first open this app</li>
           </ol>
         </CardContent>
       </Card>

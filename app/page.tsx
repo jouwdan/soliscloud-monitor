@@ -1,28 +1,27 @@
 "use client"
 
+import { useState, useEffect } from "react"
 import { AppShell } from "@/components/app-shell"
 import { DashboardOverview } from "@/components/dashboard-overview"
 import { SetupForm } from "@/components/setup-form"
-import { useConnectionStatus } from "@/lib/solis-client"
-import { Skeleton } from "@/components/ui/skeleton"
+import { getSavedCredentials } from "@/lib/solis-client"
 
 export default function HomePage() {
-  const { configured, isLoading, recheck } = useConnectionStatus()
+  const [hasCredentials, setHasCredentials] = useState<boolean | null>(null)
 
-  if (isLoading) {
+  useEffect(() => {
+    setHasCredentials(getSavedCredentials() !== null)
+  }, [])
+
+  // Still checking localStorage (only 1 frame)
+  if (hasCredentials === null) return null
+
+  if (!hasCredentials) {
     return (
-      <div className="flex h-screen items-center justify-center bg-background">
-        <div className="space-y-4 w-full max-w-md px-4">
-          <Skeleton className="h-8 w-48 mx-auto" />
-          <Skeleton className="h-4 w-64 mx-auto" />
-          <Skeleton className="h-48 w-full rounded-lg" />
-        </div>
-      </div>
+      <SetupForm
+        onComplete={() => setHasCredentials(true)}
+      />
     )
-  }
-
-  if (!configured) {
-    return <SetupForm onComplete={() => recheck()} />
   }
 
   return (
