@@ -25,6 +25,7 @@ import {
 import { useInverterDetail, useInverterDay, useInverterMonth, useInverterYear } from "@/lib/solis-client"
 import { MetricCard } from "@/components/metric-card"
 import { PowerFlow } from "@/components/power-flow"
+import { LoadShiftingCard } from "@/components/load-shifting-card"
 import { StatusBadge } from "@/components/status-badge"
 import { PowerChart } from "@/components/power-chart"
 import { EnergyBarChart } from "@/components/energy-bar-chart"
@@ -443,6 +444,11 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
             </div>
           </CardContent>
       </Card>
+
+      {/* Load Shifting Analysis */}
+      {dayData && dayData.length > 0 && (
+        <LoadShiftingCard detail={detail} dayData={dayData} />
+      )}
 
       {/* DC/AC Readings */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">

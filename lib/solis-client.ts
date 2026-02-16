@@ -48,6 +48,55 @@ export function getRefreshMs(): number {
   return getRefreshSeconds() * 1000
 }
 
+// --------- Off-peak hours helpers (localStorage) ----------
+
+const STORAGE_KEY_OFFPEAK_START = "solis_offpeak_start"
+const STORAGE_KEY_OFFPEAK_END = "solis_offpeak_end"
+const STORAGE_KEY_PEAK_RATE = "solis_peak_rate"
+const STORAGE_KEY_OFFPEAK_RATE = "solis_offpeak_rate"
+const DEFAULT_OFFPEAK_START = 23 // 11 PM
+const DEFAULT_OFFPEAK_END = 8 // 8 AM
+const DEFAULT_PEAK_RATE = 0 // c/kWh - user sets in settings
+const DEFAULT_OFFPEAK_RATE = 0
+
+export interface OffPeakSettings {
+  startHour: number
+  endHour: number
+  peakRate: number
+  offpeakRate: number
+}
+
+export function getOffPeakSettings(): OffPeakSettings {
+  if (typeof window === "undefined")
+    return {
+      startHour: DEFAULT_OFFPEAK_START,
+      endHour: DEFAULT_OFFPEAK_END,
+      peakRate: DEFAULT_PEAK_RATE,
+      offpeakRate: DEFAULT_OFFPEAK_RATE,
+    }
+  return {
+    startHour: parseInt(localStorage.getItem(STORAGE_KEY_OFFPEAK_START) || "", 10) || DEFAULT_OFFPEAK_START,
+    endHour: parseInt(localStorage.getItem(STORAGE_KEY_OFFPEAK_END) || "", 10) || DEFAULT_OFFPEAK_END,
+    peakRate: parseFloat(localStorage.getItem(STORAGE_KEY_PEAK_RATE) || "") || DEFAULT_PEAK_RATE,
+    offpeakRate: parseFloat(localStorage.getItem(STORAGE_KEY_OFFPEAK_RATE) || "") || DEFAULT_OFFPEAK_RATE,
+  }
+}
+
+export function saveOffPeakSettings(s: OffPeakSettings) {
+  localStorage.setItem(STORAGE_KEY_OFFPEAK_START, String(s.startHour))
+  localStorage.setItem(STORAGE_KEY_OFFPEAK_END, String(s.endHour))
+  localStorage.setItem(STORAGE_KEY_PEAK_RATE, String(s.peakRate))
+  localStorage.setItem(STORAGE_KEY_OFFPEAK_RATE, String(s.offpeakRate))
+}
+
+export function isOffPeakHour(hour: number, settings: OffPeakSettings): boolean {
+  if (settings.startHour > settings.endHour) {
+    // Wraps midnight: e.g. 23-8 means 23,0,1,2,...,7 are off-peak
+    return hour >= settings.startHour || hour < settings.endHour
+  }
+  return hour >= settings.startHour && hour < settings.endHour
+}
+
 // ---------- Generic fetcher ----------
 
 async function solisFetcher<T = unknown>([endpoint, body]: [
@@ -289,6 +338,16 @@ export interface InverterDayEntry {
   eToday: number
   eTotal: number
   state: number
+  batteryPower?: number
+  batteryPowerStr?: string
+  batteryCapacitySoc?: number
+  pSum?: number
+  pSumStr?: string
+  familyLoadPower?: number
+  familyLoadPowerStr?: string
+  gridPurchasedTodayEnergy?: number
+  gridSellTodayEnergy?: number
+  bypassLoadPower?: number
   [key: string]: unknown
 }
 
