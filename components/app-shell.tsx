@@ -14,6 +14,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+import { getRefreshSeconds } from "@/lib/solis-client"
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -25,6 +26,8 @@ const navItems = [
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const secs = getRefreshSeconds()
+  const refreshLabel = secs >= 60 ? `${Math.round(secs / 60)} min` : `${secs}s`
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -61,7 +64,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </nav>
         <div className="border-t border-sidebar-border p-3">
           <p className="text-xs text-muted-foreground">
-            Data refreshes every 5 min
+            Data refreshes every {refreshLabel}
           </p>
         </div>
       </aside>
