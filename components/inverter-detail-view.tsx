@@ -207,10 +207,10 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
         </CardContent>
       </Card>
 
-      {/* Power Flow + Summary — side by side on desktop */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {/* Power Flow Diagram — left half */}
-        <Card className="lg:row-span-2">
+      {/* Power Flow + Stats — responsive row on desktop */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)]">
+        {/* Power Flow Diagram — compact */}
+        <Card>
           <CardHeader className="pb-0">
             <CardTitle className="text-base font-semibold text-card-foreground">
               Live Power Flow
@@ -221,7 +221,7 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
           </CardContent>
         </Card>
 
-        {/* Right column — stacked summary cards */}
+        {/* Right side — key stats stacked */}
         <div className="flex flex-col gap-4">
           {/* Energy Production */}
           <Card>
@@ -246,39 +246,27 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
             </CardContent>
           </Card>
 
-          {/* Self-Reliance & Self-Consumption + Value Savings */}
+          {/* Self-Reliance & Self-Consumption */}
           {(() => {
             const produced = toKWh(detail.eToday, detail.eTodayStr)
             const exported = toKWh(detail.gridSellTodayEnergy, detail.gridSellTodayEnergyStr)
             const imported = toKWh(detail.gridPurchasedTodayEnergy, detail.gridPurchasedTodayEnergyStr)
             const consumed = toKWh(detail.homeLoadTodayEnergy, detail.homeLoadTodayEnergyStr)
-            const battCharge = toKWh(detail.batteryTodayChargeEnergy, detail.batteryTodayChargeEnergyStr)
             const battDischarge = toKWh(detail.batteryTodayDischargeEnergy, detail.batteryTodayDischargeEnergyStr)
 
-            // Solar energy used directly by home (not exported, not to battery)
-            const solarDirectUse = Math.max(0, produced - exported - Math.max(0, battCharge - Math.max(0, imported - consumed + battDischarge)))
-            // Simpler: self-supplied = min(consumed, solarDirectUse + battDischarge)
             const selfSupplied = Math.min(consumed, Math.max(0, produced - exported) + battDischarge)
-
-            // Grid energy that actually went to the home (not to battery)
             const gridToHome = Math.max(0, consumed - selfSupplied)
-
-            // Self-consumption: % of solar production kept (not exported)
             const clampedExport = Math.min(exported, produced)
             const selfConsumptionRate = produced > 0.01
               ? ((produced - clampedExport) / produced) * 100
               : 0
-
-            // Self-reliance: % of consumption met by solar + battery (not grid)
             const selfRelianceRate = consumed > 0.01
               ? (selfSupplied / consumed) * 100
               : 0
 
-            // Use TOU costs with proportional scaling to metered totals
             const touToday = computeTOUCost(dayData || [], imported, exported, consumed)
             const gridCostToday = touToday.gridCost
             const exportRevenue = touToday.exportRev
-            const netCostToday = gridCostToday - exportRevenue
             const fullGridCost = touToday.fullGridCost
             const valueSaved = Math.max(0, fullGridCost - gridCostToday)
 
@@ -309,7 +297,6 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
                   </CardContent>
                 </Card>
 
-                {/* Value Savings + Cost Projection */}
                 {hasRates && consumed > 0.01 && (
                   <Card>
                     <CardContent className="p-4 space-y-3">
@@ -339,15 +326,11 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
                         )}
                       </div>
 
-                      {/* Projected electricity cost based on month data */}
                       {(() => {
                         const days = monthData || []
                         const numDays = days.length
                         if (numDays < 1 || !hasRates) return null
 
-                        // Use today's actual TOU cost-per-kWh as the best estimate for
-                        // past days (since we don't have hourly data for them).
-                        // Fall back to hour-weighted avg rate if no dayData.
                         const todayImported = toKWh(detail.gridPurchasedTodayEnergy, detail.gridPurchasedTodayEnergyStr)
                         const touEffectiveRate = todayImported > 0.1 ? touToday.gridCost / todayImported : (() => {
                           let tH = 0, wS = 0
@@ -400,18 +383,18 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
               </>
             )
           })()}
-
-          {/* Today's power curve — fills remaining space */}
-          <Card className="flex-1">
-            <CardHeader className="pb-1">
-              <CardTitle className="text-sm font-semibold text-card-foreground">Today{"'"}s Power</CardTitle>
-            </CardHeader>
-            <CardContent className="pb-4">
-              <PowerChart data={dayData || []} />
-            </CardContent>
-          </Card>
         </div>
       </div>
+
+      {/* Today's Power Chart — full width */}
+      <Card>
+        <CardHeader className="pb-1">
+          <CardTitle className="text-sm font-semibold text-card-foreground">Today{"'"}s Power</CardTitle>
+        </CardHeader>
+        <CardContent className="pb-4">
+          <PowerChart data={dayData || []} />
+        </CardContent>
+      </Card>
 
       {/* Energy Flow Breakdown */}
       {(() => {
