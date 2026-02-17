@@ -294,6 +294,8 @@ function computePeriodSummaries(
   yearData: InverterYearEntry[],
   avgRate: number,
   exportRate: number,
+  todayTOUGridCost?: number,
+  todayTOUExportRev?: number,
 ): Record<Period, PeriodSummary> {
   // Shorthand: normalise a detail energy value to kWh using its companion *Str field
   const k = (val: number | undefined, unitStr: string | undefined) => toKWh(val, unitStr)
@@ -324,26 +326,40 @@ function computePeriodSummaries(
   const totalImport = k(detail.gridPurchasedTotalEnergy, detail.gridPurchasedTotalEnergyStr)
   const totalExport = k(detail.gridSellTotalEnergy, detail.gridSellTotalEnergyStr)
 
-  const make = (label: string, imp: number, exp: number, prod: number, cons: number, battC: number, battD: number, days: number): PeriodSummary => ({
-    label,
-    gridImport: imp,
-    gridExport: exp,
-    gridImportCost: imp * avgRate,
-    gridExportRevenue: exp * exportRate,
-    netCost: imp * avgRate - exp * exportRate,
-    consumption: cons,
-    production: prod,
-    batteryCharge: battC,
-    batteryDischarge: battD,
-    days,
-  })
+  // For the "day" period, use actual TOU costs from the analysis if available
+  const dayGridCost = todayTOUGridCost ?? dayImport * avgRate
+  const dayExportRev = todayTOUExportRev ?? dayExport * exportRate
+
+  // For longer periods we derive an effective rate from today's TOU data
+  // This better reflects the actual tariff mix vs a simple hour-weighted avg
+  const touEffectiveRate = dayImport > 0.1 && todayTOUGridCost != null
+    ? todayTOUGridCost / dayImport
+    : avgRate
+
+  const make = (label: string, imp: number, exp: number, prod: number, cons: number, battC: number, battD: number, days: number, overrideGridCost?: number, overrideExportRev?: number): PeriodSummary => {
+    const gridCost = overrideGridCost ?? imp * touEffectiveRate
+    const expRev = overrideExportRev ?? exp * exportRate
+    return {
+      label,
+      gridImport: imp,
+      gridExport: exp,
+      gridImportCost: gridCost,
+      gridExportRevenue: expRev,
+      netCost: gridCost - expRev,
+      consumption: cons,
+      production: prod,
+      batteryCharge: battC,
+      batteryDischarge: battD,
+      days,
+    }
+  }
 
   return {
     day: make("Today", dayImport, dayExport,
       k(detail.eToday, detail.eTodayStr),
       k(detail.homeLoadTodayEnergy, detail.homeLoadTodayEnergyStr),
       k(detail.batteryTodayChargeEnergy, detail.batteryTodayChargeEnergyStr),
-      k(detail.batteryTodayDischargeEnergy, detail.batteryTodayDischargeEnergyStr), 1),
+      k(detail.batteryTodayDischargeEnergy, detail.batteryTodayDischargeEnergyStr), 1, dayGridCost, dayExportRev),
     week: make("This Week", weekImport, weekExport,
       weekDays.reduce((s, d) => s + (d.energy || 0), 0),
       weekDays.reduce((s, d) => s + (d.homeLoadEnergy || 0), 0),
@@ -397,8 +413,12 @@ export function LoadShiftingCard({ detail, dayData, monthData, yearData }: LoadS
   const exportRate = useMemo(() => getExportPrice(), [])
 
   const summaries = useMemo(
-    () => computePeriodSummaries(detail, monthData || [], yearData || [], avgRate, exportRate),
-    [detail, monthData, yearData, avgRate, exportRate]
+    () => computePeriodSummaries(
+      detail, monthData || [], yearData || [], avgRate, exportRate,
+      analysis.hasRates ? analysis.totalGridCost : undefined,
+      analysis.hasRates ? analysis.gridExportRevenue : undefined,
+    ),
+    [detail, monthData, yearData, avgRate, exportRate, analysis]
   )
   const currentSummary = summaries[period]
 

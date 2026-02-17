@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useCallback } from "react"
 import Link from "next/link"
 import { format } from "date-fns"
 import {
@@ -20,7 +20,7 @@ import {
   PlugZap,
   ShieldCheck,
 } from "lucide-react"
-import { useInverterDetail, useInverterDay, useInverterMonth, useInverterYear, getCurrencySettings, getTariffGroups, getExportPrice, toKWh } from "@/lib/solis-client"
+import { useInverterDetail, useInverterDay, useInverterMonth, useInverterYear, getCurrencySettings, getTariffGroups, getExportPrice, toKWh, getRateForHour, toKW, type InverterDayEntry } from "@/lib/solis-client"
 import { PowerFlow } from "@/components/power-flow"
 import { LoadShiftingCard } from "@/components/load-shifting-card"
 import { StatusBadge } from "@/components/status-badge"
@@ -46,28 +46,43 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
 
   const currency = useMemo(() => getCurrencySettings(), [])
   const exportRate = useMemo(() => getExportPrice(), [])
-  const avgRate = useMemo(() => {
-    const groups = getTariffGroups()
-    // Weight each rate by the number of hours its slots cover
-    let totalHours = 0
-    let weightedSum = 0
-    for (const g of groups) {
-      if (g.rate <= 0) continue
-      const slots = g.slots?.length ? g.slots : [{ startHour: g.startHour, endHour: g.endHour }]
-      let hours = 0
-      for (const s of slots) {
-        hours += s.endHour > s.startHour ? s.endHour - s.startHour : (24 - s.startHour) + s.endHour
+  const tariffGroups = useMemo(() => getTariffGroups(), [])
+  const hasRates = tariffGroups.some((g) => g.rate > 0)
+
+  /** Compute TOU-weighted cost from 5-min day entries */
+  const computeTOUCost = useCallback((data: InverterDayEntry[]) => {
+    if (!data.length || !hasRates) return { gridCost: 0, exportRev: 0, selfSuppliedValue: 0, gridToHomeCost: 0 }
+    const sorted = [...data].sort((a, b) => Number(a.dataTimestamp) - Number(b.dataTimestamp))
+    let gridImportCost = 0
+    let gridExportRev = 0
+    for (let i = 0; i < sorted.length; i++) {
+      const entry = sorted[i]
+      let ts = Number(entry.dataTimestamp)
+      if (ts > 0 && ts < 1e12) ts *= 1000
+      const hour = new Date(ts).getHours()
+      const rate = getRateForHour(hour, tariffGroups)
+
+      let intervalHours = 5 / 60
+      if (i > 0) {
+        let prev = Number(sorted[i - 1].dataTimestamp)
+        if (prev > 0 && prev < 1e12) prev *= 1000
+        const diff = (ts - prev) / (1000 * 60 * 60)
+        if (diff > 0 && diff < 1) intervalHours = diff
       }
-      if (hours > 0) {
-        weightedSum += g.rate * hours
-        totalHours += hours
+
+      const raw = entry as Record<string, unknown>
+      const sharedPec = entry.pacPec
+      const gridPec = (raw.psumPec ?? raw.psumCalPec ?? raw.pSumPec ?? sharedPec) as string | undefined
+      const gridPower = toKW(entry.pSum, entry.pSumStr, gridPec)
+
+      if (gridPower > 0) {
+        gridImportCost += gridPower * intervalHours * rate
+      } else {
+        gridExportRev += Math.abs(gridPower) * intervalHours * exportRate
       }
     }
-    if (totalHours > 0) return weightedSum / totalHours
-    // Fallback: simple average
-    const rates = groups.filter((g) => g.rate > 0).map((g) => g.rate)
-    return rates.length > 0 ? rates.reduce((a, b) => a + b, 0) / rates.length : 0
-  }, [])
+    return { gridCost: gridImportCost, exportRev: gridExportRev }
+  }, [tariffGroups, hasRates, exportRate])
 
   const { data: dayData } = useInverterDay(id, sn, today, "8")
   const { data: monthData } = useInverterMonth(id, sn, thisMonth)
@@ -235,10 +250,38 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
               ? (selfSupplied / consumed) * 100
               : 0
 
-            const valueSaved = avgRate > 0 ? selfSupplied * avgRate : 0
-            const exportRevenue = exportRate > 0 ? clampedExport * exportRate : 0
-            const gridCostToday = gridToHome * avgRate
+            // Use actual TOU costs from dayData instead of flat avgRate
+            const touToday = computeTOUCost(dayData || [])
+            const gridCostToday = touToday.gridCost
+            const exportRevenue = touToday.exportRev
             const netCostToday = gridCostToday - exportRevenue
+            // Value saved = what we would have paid for the self-supplied energy at TOU rates
+            // Approximate by: total cost if ALL consumption from grid minus actual grid cost
+            const fullGridCost = (() => {
+              if (!dayData?.length || !hasRates) return 0
+              const sorted = [...dayData].sort((a, b) => Number(a.dataTimestamp) - Number(b.dataTimestamp))
+              let cost = 0
+              for (let i = 0; i < sorted.length; i++) {
+                const entry = sorted[i]
+                let ts = Number(entry.dataTimestamp)
+                if (ts > 0 && ts < 1e12) ts *= 1000
+                const hour = new Date(ts).getHours()
+                const rate = getRateForHour(hour, tariffGroups)
+                let intervalHours = 5 / 60
+                if (i > 0) {
+                  let prev = Number(sorted[i - 1].dataTimestamp)
+                  if (prev > 0 && prev < 1e12) prev *= 1000
+                  const diff = (ts - prev) / (1000 * 60 * 60)
+                  if (diff > 0 && diff < 1) intervalHours = diff
+                }
+                const raw = entry as Record<string, unknown>
+                const sharedPec = entry.pacPec
+                const loadPower = toKW(entry.familyLoadPower, entry.familyLoadPowerStr, ((raw.familyLoadPowerPec ?? sharedPec) as string | undefined))
+                cost += loadPower * intervalHours * rate
+              }
+              return cost
+            })()
+            const valueSaved = Math.max(0, fullGridCost - gridCostToday)
 
             return (
               <>
@@ -268,7 +311,7 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
                 </Card>
 
                 {/* Value Savings + Cost Projection */}
-                {avgRate > 0 && consumed > 0.01 && (
+                {hasRates && consumed > 0.01 && (
                   <Card>
                     <CardContent className="p-4 space-y-3">
                       <div className="grid grid-cols-3 gap-3 text-center">
@@ -291,7 +334,7 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
                         ) : (
                           <div className="rounded-md border p-2">
                             <p className="text-[10px] font-medium text-muted-foreground">Without Solar</p>
-                            <p className="mt-0.5 text-lg font-bold tabular-nums text-muted-foreground line-through">{currency.symbol}{(consumed * avgRate).toFixed(2)}</p>
+                            <p className="mt-0.5 text-lg font-bold tabular-nums text-muted-foreground line-through">{currency.symbol}{fullGridCost.toFixed(2)}</p>
                             <p className="text-[9px] text-muted-foreground">{consumed.toFixed(1)} kWh from grid</p>
                           </div>
                         )}
@@ -301,13 +344,28 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
                       {(() => {
                         const days = monthData || []
                         const numDays = days.length
-                        if (numDays < 1 || avgRate <= 0) return null
+                        if (numDays < 1 || !hasRates) return null
 
-                        // Sum import cost and export revenue across all days in the month
+                        // Use today's actual TOU cost-per-kWh as the best estimate for
+                        // past days (since we don't have hourly data for them).
+                        // Fall back to hour-weighted avg rate if no dayData.
+                        const todayImported = toKWh(detail.gridPurchasedTodayEnergy, detail.gridPurchasedTodayEnergyStr)
+                        const touEffectiveRate = todayImported > 0.1 ? touToday.gridCost / todayImported : (() => {
+                          let tH = 0, wS = 0
+                          for (const g of tariffGroups) {
+                            if (g.rate <= 0) continue
+                            const sl = g.slots?.length ? g.slots : [{ startHour: g.startHour, endHour: g.endHour }]
+                            let h = 0
+                            for (const s of sl) h += s.endHour > s.startHour ? s.endHour - s.startHour : (24 - s.startHour) + s.endHour
+                            if (h > 0) { wS += g.rate * h; tH += h }
+                          }
+                          return tH > 0 ? wS / tH : 0
+                        })()
+
                         let totalImportCost = 0
                         let totalExportRev = 0
                         for (const d of days) {
-                          totalImportCost += (d.gridPurchasedEnergy || 0) * avgRate
+                          totalImportCost += (d.gridPurchasedEnergy || 0) * touEffectiveRate
                           totalExportRev += (d.gridSellEnergy || 0) * exportRate
                         }
 
