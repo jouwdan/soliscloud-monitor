@@ -213,25 +213,31 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
             const exported = toKWh(detail.gridSellTodayEnergy, detail.gridSellTodayEnergyStr)
             const imported = toKWh(detail.gridPurchasedTodayEnergy, detail.gridPurchasedTodayEnergyStr)
             const consumed = toKWh(detail.homeLoadTodayEnergy, detail.homeLoadTodayEnergyStr)
+            const battCharge = toKWh(detail.batteryTodayChargeEnergy, detail.batteryTodayChargeEnergyStr)
+            const battDischarge = toKWh(detail.batteryTodayDischargeEnergy, detail.batteryTodayDischargeEnergyStr)
+
+            // Solar energy used directly by home (not exported, not to battery)
+            const solarDirectUse = Math.max(0, produced - exported - Math.max(0, battCharge - Math.max(0, imported - consumed + battDischarge)))
+            // Simpler: self-supplied = min(consumed, solarDirectUse + battDischarge)
+            const selfSupplied = Math.min(consumed, Math.max(0, produced - exported) + battDischarge)
+
+            // Grid energy that actually went to the home (not to battery)
+            const gridToHome = Math.max(0, consumed - selfSupplied)
 
             // Self-consumption: % of solar production kept (not exported)
-            // Guard: exported cannot exceed produced
             const clampedExport = Math.min(exported, produced)
             const selfConsumptionRate = produced > 0.01
               ? ((produced - clampedExport) / produced) * 100
               : 0
 
-            // Self-reliance: % of consumption met without grid
-            // Guard: imported cannot exceed consumed
-            const clampedImport = Math.min(imported, consumed)
+            // Self-reliance: % of consumption met by solar + battery (not grid)
             const selfRelianceRate = consumed > 0.01
-              ? ((consumed - clampedImport) / consumed) * 100
+              ? (selfSupplied / consumed) * 100
               : 0
 
-            const gridAvoided = consumed > 0.01 ? Math.max(0, consumed - clampedImport) : 0
-            const valueSaved = avgRate > 0 ? gridAvoided * avgRate : 0
+            const valueSaved = avgRate > 0 ? selfSupplied * avgRate : 0
             const exportRevenue = exportRate > 0 ? clampedExport * exportRate : 0
-            const gridCostToday = clampedImport * avgRate
+            const gridCostToday = gridToHome * avgRate
             const netCostToday = gridCostToday - exportRevenue
 
             return (
@@ -269,12 +275,12 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
                         <div className="rounded-md bg-emerald-500/5 p-2">
                           <p className="text-[10px] font-medium text-muted-foreground">Saved Today</p>
                           <p className="mt-0.5 text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{currency.symbol}{valueSaved.toFixed(2)}</p>
-                          <p className="text-[9px] text-muted-foreground">{gridAvoided.toFixed(1)} kWh self-supplied</p>
+                          <p className="text-[9px] text-muted-foreground">{selfSupplied.toFixed(1)} kWh self-supplied</p>
                         </div>
                         <div className="rounded-md border p-2">
                           <p className="text-[10px] font-medium text-muted-foreground">Grid Cost</p>
                           <p className="mt-0.5 text-lg font-bold tabular-nums text-card-foreground">{currency.symbol}{gridCostToday.toFixed(2)}</p>
-                          <p className="text-[9px] text-muted-foreground">{clampedImport.toFixed(1)} kWh imported</p>
+                          <p className="text-[9px] text-muted-foreground">{gridToHome.toFixed(1)} kWh to home</p>
                         </div>
                         {exportRate > 0 ? (
                           <div className="rounded-md bg-emerald-500/5 p-2">
