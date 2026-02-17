@@ -48,6 +48,23 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
   const exportRate = useMemo(() => getExportPrice(), [])
   const avgRate = useMemo(() => {
     const groups = getTariffGroups()
+    // Weight each rate by the number of hours its slots cover
+    let totalHours = 0
+    let weightedSum = 0
+    for (const g of groups) {
+      if (g.rate <= 0) continue
+      const slots = g.slots?.length ? g.slots : [{ startHour: g.startHour, endHour: g.endHour }]
+      let hours = 0
+      for (const s of slots) {
+        hours += s.endHour > s.startHour ? s.endHour - s.startHour : (24 - s.startHour) + s.endHour
+      }
+      if (hours > 0) {
+        weightedSum += g.rate * hours
+        totalHours += hours
+      }
+    }
+    if (totalHours > 0) return weightedSum / totalHours
+    // Fallback: simple average
     const rates = groups.filter((g) => g.rate > 0).map((g) => g.rate)
     return rates.length > 0 ? rates.reduce((a, b) => a + b, 0) / rates.length : 0
   }, [])
@@ -192,10 +209,10 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
 
           {/* Self-Reliance & Self-Consumption + Value Savings */}
           {(() => {
-            const produced = detail.eToday || 0
-            const exported = detail.gridSellTodayEnergy || 0
-            const imported = detail.gridPurchasedTodayEnergy || 0
-            const consumed = detail.homeLoadTodayEnergy || 0
+            const produced = toKWh(detail.eToday, detail.eTodayStr)
+            const exported = toKWh(detail.gridSellTodayEnergy, detail.gridSellTodayEnergyStr)
+            const imported = toKWh(detail.gridPurchasedTodayEnergy, detail.gridPurchasedTodayEnergyStr)
+            const consumed = toKWh(detail.homeLoadTodayEnergy, detail.homeLoadTodayEnergyStr)
 
             // Self-consumption: % of solar production kept (not exported)
             // Guard: exported cannot exceed produced

@@ -216,8 +216,16 @@ function analyzeLoadShifting(
   const minRate = rates.length > 0 ? Math.min(...rates) : 0
   const shiftedSavings = hasRates ? loadShiftedEnergy * (maxRate - minRate) : 0
 
-  // What it would cost if ALL consumption came from grid at avg weighted rate
-  const avgRate = rates.length > 0 ? rates.reduce((a, b) => a + b, 0) / rates.length : 0
+  // What it would cost if ALL consumption came from grid at hour-weighted avg rate
+  let _totalH = 0, _weightedS = 0
+  for (const g of tariffGroups) {
+    if (g.rate <= 0) continue
+    const sl = g.slots?.length ? g.slots : [{ startHour: g.startHour, endHour: g.endHour }]
+    let h = 0
+    for (const s of sl) h += s.endHour > s.startHour ? s.endHour - s.startHour : (24 - s.startHour) + s.endHour
+    if (h > 0) { _weightedS += g.rate * h; _totalH += h }
+  }
+  const avgRate = _totalH > 0 ? _weightedS / _totalH : (rates.length > 0 ? rates.reduce((a, b) => a + b, 0) / rates.length : 0)
   const costWithoutSolar = totalLoadEnergy * avgRate
   const netCost = totalGridCost - gridExportRevenue
 
@@ -374,6 +382,15 @@ export function LoadShiftingCard({ detail, dayData, monthData, yearData }: LoadS
 
   const tariffGroups = useMemo(() => getTariffGroups(), [])
   const avgRate = useMemo(() => {
+    let totalH = 0, weightedS = 0
+    for (const g of tariffGroups) {
+      if (g.rate <= 0) continue
+      const sl = g.slots?.length ? g.slots : [{ startHour: g.startHour, endHour: g.endHour }]
+      let h = 0
+      for (const s of sl) h += s.endHour > s.startHour ? s.endHour - s.startHour : (24 - s.startHour) + s.endHour
+      if (h > 0) { weightedS += g.rate * h; totalH += h }
+    }
+    if (totalH > 0) return weightedS / totalH
     const rates = tariffGroups.filter((g) => g.rate > 0).map((g) => g.rate)
     return rates.length > 0 ? rates.reduce((a, b) => a + b, 0) / rates.length : 0
   }, [tariffGroups])
