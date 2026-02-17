@@ -20,7 +20,7 @@ import {
   PlugZap,
   ShieldCheck,
 } from "lucide-react"
-import { useInverterDetail, useInverterDay, useInverterMonth, useInverterYear, getCurrencySettings, getTariffGroups, getExportPrice, toKWh, getRateForHour, toKW, type InverterDayEntry } from "@/lib/solis-client"
+import { useInverterDetail, useInverterDay, useInverterMonth, useInverterYear, getCurrencySettings, getTariffGroups, getExportPrice, toKWh, getRateForHour, getTariffForHour, toKW, type InverterDayEntry } from "@/lib/solis-client"
 import { PowerFlow } from "@/components/power-flow"
 import { LoadShiftingCard } from "@/components/load-shifting-card"
 import { StatusBadge } from "@/components/status-badge"
@@ -86,10 +86,7 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
       const ld = loadPower > 0 ? loadPower * intervalHours : 0
       rawGI += gi; rawGE += ge; rawLoad += ld
 
-      const matchedGroup = tariffGroups.find((g) => {
-        if (g.startHour > g.endHour) return hour >= g.startHour || hour < g.endHour
-        return hour >= g.startHour && hour < g.endHour
-      })
+      const matchedGroup = getTariffForHour(hour, tariffGroups)
       if (matchedGroup) {
         const acc = groupRaw.get(matchedGroup.id)!
         acc.gi += gi; acc.ld += ld

@@ -19,6 +19,7 @@ import {
   getTariffGroups,
   getTariffSlots,
   getRateForHour,
+  getTariffForHour,
   getCurrencySettings,
   getExportPrice,
   toKW,
@@ -155,10 +156,7 @@ function analyzeLoadShifting(
     rawBattDischargeWeighted += bd * rate
 
     // Per-tariff-group
-    const matchedGroup = tariffGroups.find((g) => {
-      if (g.startHour > g.endHour) return hour >= g.startHour || hour < g.endHour
-      return hour >= g.startHour && hour < g.endHour
-    })
+    const matchedGroup = getTariffForHour(hour, tariffGroups)
     if (matchedGroup) {
       const acc = groupRaw.get(matchedGroup.id)!
       acc.gridImport += gi
@@ -215,7 +213,11 @@ function analyzeLoadShifting(
     .filter((b) => b.gridImport > 0.001 || b.consumption > 0.001)
 
   const totalGridCost = tariffBreakdown.reduce((sum, b) => sum + b.cost, 0)
-  const offPeakGridCost = offPeakGridImport * (tariffGroups.find(g => isOffPeakHour(g.startHour, settings))?.rate ?? 0)
+  // Compute off-peak / peak grid cost from tariff breakdown
+  const offPeakGridCost = tariffBreakdown.reduce((sum, b) => {
+    const isOp = isOffPeakHour(b.group.slots?.[0]?.startHour ?? b.group.startHour, settings)
+    return sum + (isOp ? b.cost : 0)
+  }, 0)
   const peakGridCost = totalGridCost - offPeakGridCost
 
   // Export revenue using metered export total
@@ -613,17 +615,20 @@ export function LoadShiftingCard({ detail, dayData, monthData, yearData }: LoadS
                   </p>
                   <p className="text-[10px] text-muted-foreground">after export</p>
                 </div>
-                {analysis.costWithoutSolar > 0.01 && (
-                  <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3 text-center">
+                {analysis.costWithoutSolar > 0.01 && (() => {
+                  const solarSaving = analysis.costWithoutSolar - analysis.netCost
+                  return (
+                  <div className={`rounded-lg p-3 text-center ${solarSaving >= 0 ? "border border-emerald-500/30 bg-emerald-500/5" : "border"}`}>
                     <p className="text-xs text-muted-foreground">Without Solar</p>
                     <p className="mt-1 text-lg font-bold tabular-nums text-muted-foreground line-through">
                       {currency.symbol}{analysis.costWithoutSolar.toFixed(2)}
                     </p>
-                    <p className="text-[10px] text-emerald-600 dark:text-emerald-400">
-                      saving {currency.symbol}{(analysis.costWithoutSolar - analysis.netCost).toFixed(2)}
+                    <p className={`text-[10px] ${solarSaving >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground"}`}>
+                      {solarSaving >= 0 ? "saving" : "extra"} {currency.symbol}{Math.abs(solarSaving).toFixed(2)}
                     </p>
                   </div>
-                )}
+                  )
+                })()}
               </div>
             )}
 
@@ -755,12 +760,17 @@ export function LoadShiftingCard({ detail, dayData, monthData, yearData }: LoadS
                   <p className="text-xs text-muted-foreground">Net Cost</p>
                   <p className="mt-1 text-lg font-bold tabular-nums text-card-foreground">{currency.symbol}{currentSummary.netCost.toFixed(2)}</p>
                 </div>
-                {withoutSolar > 0.01 && (
-                  <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3 text-center">
-                    <p className="text-xs text-muted-foreground">Saving vs Grid</p>
-                    <p className="mt-1 text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{currency.symbol}{(withoutSolar - currentSummary.netCost).toFixed(2)}</p>
+                {withoutSolar > 0.01 && (() => {
+                  const periodSaving = withoutSolar - currentSummary.netCost
+                  return (
+                  <div className={`rounded-lg p-3 text-center ${periodSaving >= 0 ? "border border-emerald-500/30 bg-emerald-500/5" : "border"}`}>
+                    <p className="text-xs text-muted-foreground">{periodSaving >= 0 ? "Saving vs Grid" : "Without Solar"}</p>
+                    <p className={`mt-1 text-lg font-bold tabular-nums ${periodSaving >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground line-through"}`}>
+                      {currency.symbol}{(periodSaving >= 0 ? periodSaving : withoutSolar).toFixed(2)}
+                    </p>
                   </div>
-                )}
+                  )
+                })()}
                 {hasBatt && (
                   <div className={`rounded-lg p-3 text-center ${estBenefit >= 0 ? "border border-emerald-500/30 bg-emerald-500/5" : "border border-red-500/30 bg-red-500/5"}`}>
                     <p className="text-xs text-muted-foreground">Batt Arbitrage</p>
