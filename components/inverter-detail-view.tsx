@@ -20,7 +20,7 @@ import {
   PlugZap,
   ShieldCheck,
 } from "lucide-react"
-import { useInverterDetail, useInverterDay, useInverterMonth, useInverterYear, getCurrencySettings, getTariffGroups, getExportPrice } from "@/lib/solis-client"
+import { useInverterDetail, useInverterDay, useInverterMonth, useInverterYear, getCurrencySettings, getTariffGroups, getExportPrice, toKWh } from "@/lib/solis-client"
 import { PowerFlow } from "@/components/power-flow"
 import { LoadShiftingCard } from "@/components/load-shifting-card"
 import { StatusBadge } from "@/components/status-badge"
@@ -335,7 +335,13 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
 
       {/* Energy Flow Breakdown */}
       {(() => {
-        // Compute week totals from last 7 days of monthData
+        // Helper: normalise to kWh and format with appropriate unit for display
+        const e = (val: number | undefined, unitStr: string | undefined) => {
+          const kwh = toKWh(val, unitStr)
+          if (kwh >= 1000) return { text: (kwh / 1000).toFixed(2), unit: "MWh" }
+          return { text: kwh.toFixed(1), unit: "kWh" }
+        }
+        // Compute week totals from last 7 days of monthData (already in kWh)
         const sorted7 = [...(monthData || [])].sort((a, b) => (b.date || 0) - (a.date || 0)).slice(0, 7)
         const wk = {
           production: sorted7.reduce((s, d) => s + (d.energy || 0), 0),
@@ -345,8 +351,17 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
           battCharge: sorted7.reduce((s, d) => s + (d.batteryChargeEnergy || 0), 0),
           battDischarge: sorted7.reduce((s, d) => s + (d.batteryDischargeEnergy || 0), 0),
         }
+        const fmtWk = (v: number) => v >= 1000 ? { text: (v / 1000).toFixed(2), unit: "MWh" } : { text: v.toFixed(1), unit: "kWh" }
         const thHidden = "hidden px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground"
         const tdHidden = "hidden px-3 py-2.5 text-right tabular-nums text-card-foreground"
+        const ECell = ({ v, u, cls }: { v: number | undefined; u: string | undefined; cls: string }) => {
+          const f = e(v, u)
+          return <td className={cls}>{f.text} <span className="text-muted-foreground">{f.unit}</span></td>
+        }
+        const WkCell = ({ v, cls }: { v: number; cls: string }) => {
+          const f = fmtWk(v)
+          return <td className={cls}>{f.text} <span className="text-muted-foreground">{f.unit}</span></td>
+        }
         return (
       <Card>
         <CardHeader className="pb-3">
@@ -373,102 +388,52 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
                     <td className="flex items-center gap-2 px-3 py-2.5 font-medium text-card-foreground">
                       <Sun className="h-3.5 w-3.5 text-primary" /> Production
                     </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-card-foreground">
-                      {detail.eToday?.toFixed(1)} <span className="text-muted-foreground">{detail.eTodayStr}</span>
-                    </td>
-                    <td className={`${tdHidden} sm:table-cell`}>
-                      {wk.production.toFixed(1)} <span className="text-muted-foreground">kWh</span>
-                    </td>
-                    <td className={`${tdHidden} sm:table-cell`}>
-                      {detail.eMonth?.toFixed(1)} <span className="text-muted-foreground">{detail.eMonthStr}</span>
-                    </td>
-                    <td className={`${tdHidden} md:table-cell`}>
-                      {detail.eYear?.toFixed(1)} <span className="text-muted-foreground">{detail.eYearStr}</span>
-                    </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-card-foreground">
-                      {detail.eTotal?.toFixed(1)} <span className="text-muted-foreground">{detail.eTotalStr}</span>
-                    </td>
+                    <ECell v={detail.eToday} u={detail.eTodayStr} cls="px-3 py-2.5 text-right tabular-nums text-card-foreground" />
+                    <WkCell v={wk.production} cls={`${tdHidden} sm:table-cell`} />
+                    <ECell v={detail.eMonth} u={detail.eMonthStr} cls={`${tdHidden} sm:table-cell`} />
+                    <ECell v={detail.eYear} u={detail.eYearStr} cls={`${tdHidden} md:table-cell`} />
+                    <ECell v={detail.eTotal} u={detail.eTotalStr} cls="px-3 py-2.5 text-right tabular-nums text-card-foreground" />
                   </tr>
                   <tr>
                     <td className="flex items-center gap-2 px-3 py-2.5 font-medium text-card-foreground">
                       <Home className="h-3.5 w-3.5 text-muted-foreground" /> Consumption
                     </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-card-foreground">
-                      {detail.homeLoadTodayEnergy?.toFixed(1)} <span className="text-muted-foreground">{detail.homeLoadTodayEnergyStr}</span>
-                    </td>
-                    <td className={`${tdHidden} sm:table-cell`}>
-                      {wk.consumption.toFixed(1)} <span className="text-muted-foreground">kWh</span>
-                    </td>
-                    <td className={`${tdHidden} sm:table-cell`}>
-                      {(detail.homeLoadMonthEnergy ?? 0).toFixed(1)} <span className="text-muted-foreground">{detail.homeLoadMonthEnergyStr || "kWh"}</span>
-                    </td>
-                    <td className={`${tdHidden} md:table-cell`}>
-                      {(detail.homeLoadYearEnergy ?? 0).toFixed(1)} <span className="text-muted-foreground">{detail.homeLoadYearEnergyStr || "kWh"}</span>
-                    </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-card-foreground">
-                      {detail.homeLoadTotalEnergy?.toFixed(1)} <span className="text-muted-foreground">{detail.homeLoadTotalEnergyStr}</span>
-                    </td>
+                    <ECell v={detail.homeLoadTodayEnergy} u={detail.homeLoadTodayEnergyStr} cls="px-3 py-2.5 text-right tabular-nums text-card-foreground" />
+                    <WkCell v={wk.consumption} cls={`${tdHidden} sm:table-cell`} />
+                    <ECell v={detail.homeLoadMonthEnergy} u={detail.homeLoadMonthEnergyStr || "kWh"} cls={`${tdHidden} sm:table-cell`} />
+                    <ECell v={detail.homeLoadYearEnergy} u={detail.homeLoadYearEnergyStr || "kWh"} cls={`${tdHidden} md:table-cell`} />
+                    <ECell v={detail.homeLoadTotalEnergy} u={detail.homeLoadTotalEnergyStr} cls="px-3 py-2.5 text-right tabular-nums text-card-foreground" />
                   </tr>
                   <tr>
                     <td className="flex items-center gap-2 px-3 py-2.5 font-medium text-card-foreground">
                       <ArrowDownToLine className="h-3.5 w-3.5 text-red-500" /> Grid Import
                     </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-card-foreground">
-                      {detail.gridPurchasedTodayEnergy?.toFixed(1)} <span className="text-muted-foreground">{detail.gridPurchasedTodayEnergyStr}</span>
-                    </td>
-                    <td className={`${tdHidden} sm:table-cell`}>
-                      {wk.gridImport.toFixed(1)} <span className="text-muted-foreground">kWh</span>
-                    </td>
-                    <td className={`${tdHidden} sm:table-cell`}>
-                      {(detail.gridPurchasedMonthEnergy ?? 0).toFixed(1)} <span className="text-muted-foreground">{detail.gridPurchasedMonthEnergyStr || "kWh"}</span>
-                    </td>
-                    <td className={`${tdHidden} md:table-cell`}>
-                      {(detail.gridPurchasedYearEnergy ?? 0).toFixed(1)} <span className="text-muted-foreground">{detail.gridPurchasedYearEnergyStr || "kWh"}</span>
-                    </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-card-foreground">
-                      {detail.gridPurchasedTotalEnergy?.toFixed(1)} <span className="text-muted-foreground">{detail.gridPurchasedTotalEnergyStr}</span>
-                    </td>
+                    <ECell v={detail.gridPurchasedTodayEnergy} u={detail.gridPurchasedTodayEnergyStr} cls="px-3 py-2.5 text-right tabular-nums text-card-foreground" />
+                    <WkCell v={wk.gridImport} cls={`${tdHidden} sm:table-cell`} />
+                    <ECell v={detail.gridPurchasedMonthEnergy} u={detail.gridPurchasedMonthEnergyStr || "kWh"} cls={`${tdHidden} sm:table-cell`} />
+                    <ECell v={detail.gridPurchasedYearEnergy} u={detail.gridPurchasedYearEnergyStr || "kWh"} cls={`${tdHidden} md:table-cell`} />
+                    <ECell v={detail.gridPurchasedTotalEnergy} u={detail.gridPurchasedTotalEnergyStr} cls="px-3 py-2.5 text-right tabular-nums text-card-foreground" />
                   </tr>
                   <tr>
                     <td className="flex items-center gap-2 px-3 py-2.5 font-medium text-card-foreground">
                       <ArrowUpFromLine className="h-3.5 w-3.5 text-emerald-500" /> Grid Export
                     </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-card-foreground">
-                      {detail.gridSellTodayEnergy?.toFixed(1)} <span className="text-muted-foreground">{detail.gridSellTodayEnergyStr}</span>
-                    </td>
-                    <td className={`${tdHidden} sm:table-cell`}>
-                      {wk.gridExport.toFixed(1)} <span className="text-muted-foreground">kWh</span>
-                    </td>
-                    <td className={`${tdHidden} sm:table-cell`}>
-                      {(detail.gridSellMonthEnergy ?? 0).toFixed(1)} <span className="text-muted-foreground">{detail.gridSellMonthEnergyStr || "kWh"}</span>
-                    </td>
-                    <td className={`${tdHidden} md:table-cell`}>
-                      {(detail.gridSellYearEnergy ?? 0).toFixed(1)} <span className="text-muted-foreground">{detail.gridSellYearEnergyStr || "kWh"}</span>
-                    </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-card-foreground">
-                      {detail.gridSellTotalEnergy?.toFixed(1)} <span className="text-muted-foreground">{detail.gridSellTotalEnergyStr}</span>
-                    </td>
+                    <ECell v={detail.gridSellTodayEnergy} u={detail.gridSellTodayEnergyStr} cls="px-3 py-2.5 text-right tabular-nums text-card-foreground" />
+                    <WkCell v={wk.gridExport} cls={`${tdHidden} sm:table-cell`} />
+                    <ECell v={detail.gridSellMonthEnergy} u={detail.gridSellMonthEnergyStr || "kWh"} cls={`${tdHidden} sm:table-cell`} />
+                    <ECell v={detail.gridSellYearEnergy} u={detail.gridSellYearEnergyStr || "kWh"} cls={`${tdHidden} md:table-cell`} />
+                    <ECell v={detail.gridSellTotalEnergy} u={detail.gridSellTotalEnergyStr} cls="px-3 py-2.5 text-right tabular-nums text-card-foreground" />
                   </tr>
                   {(detail.batteryTodayChargeEnergy || detail.batteryTotalChargeEnergy) ? (
                   <tr>
                     <td className="flex items-center gap-2 px-3 py-2.5 font-medium text-card-foreground">
                       <BatteryCharging className="h-3.5 w-3.5 text-primary" /> Battery Charge
                     </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-card-foreground">
-                      {detail.batteryTodayChargeEnergy?.toFixed(1)} <span className="text-muted-foreground">{detail.batteryTodayChargeEnergyStr}</span>
-                    </td>
-                    <td className={`${tdHidden} sm:table-cell`}>
-                      {wk.battCharge.toFixed(1)} <span className="text-muted-foreground">kWh</span>
-                    </td>
-                    <td className={`${tdHidden} sm:table-cell`}>
-                      {(detail.batteryMonthChargeEnergy ?? 0).toFixed(1)} <span className="text-muted-foreground">{detail.batteryMonthChargeEnergyStr || "kWh"}</span>
-                    </td>
-                    <td className={`${tdHidden} md:table-cell`}>
-                      {(detail.batteryYearChargeEnergy ?? 0).toFixed(1)} <span className="text-muted-foreground">{detail.batteryYearChargeEnergyStr || "kWh"}</span>
-                    </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-card-foreground">
-                      {detail.batteryTotalChargeEnergy?.toFixed(1)} <span className="text-muted-foreground">{detail.batteryTotalChargeEnergyStr}</span>
-                    </td>
+                    <ECell v={detail.batteryTodayChargeEnergy} u={detail.batteryTodayChargeEnergyStr} cls="px-3 py-2.5 text-right tabular-nums text-card-foreground" />
+                    <WkCell v={wk.battCharge} cls={`${tdHidden} sm:table-cell`} />
+                    <ECell v={detail.batteryMonthChargeEnergy} u={detail.batteryMonthChargeEnergyStr || "kWh"} cls={`${tdHidden} sm:table-cell`} />
+                    <ECell v={detail.batteryYearChargeEnergy} u={detail.batteryYearChargeEnergyStr || "kWh"} cls={`${tdHidden} md:table-cell`} />
+                    <ECell v={detail.batteryTotalChargeEnergy} u={detail.batteryTotalChargeEnergyStr} cls="px-3 py-2.5 text-right tabular-nums text-card-foreground" />
                   </tr>
                   ) : null}
                   {(detail.batteryTodayDischargeEnergy || detail.batteryTotalDischargeEnergy) ? (
@@ -476,21 +441,11 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
                     <td className="flex items-center gap-2 px-3 py-2.5 font-medium text-card-foreground">
                       <Battery className="h-3.5 w-3.5 text-primary" /> Battery Discharge
                     </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-card-foreground">
-                      {detail.batteryTodayDischargeEnergy?.toFixed(1)} <span className="text-muted-foreground">{detail.batteryTodayDischargeEnergyStr}</span>
-                    </td>
-                    <td className={`${tdHidden} sm:table-cell`}>
-                      {wk.battDischarge.toFixed(1)} <span className="text-muted-foreground">kWh</span>
-                    </td>
-                    <td className={`${tdHidden} sm:table-cell`}>
-                      {(detail.batteryMonthDischargeEnergy ?? 0).toFixed(1)} <span className="text-muted-foreground">{detail.batteryMonthDischargeEnergyStr || "kWh"}</span>
-                    </td>
-                    <td className={`${tdHidden} md:table-cell`}>
-                      {(detail.batteryYearDischargeEnergy ?? 0).toFixed(1)} <span className="text-muted-foreground">{detail.batteryYearDischargeEnergyStr || "kWh"}</span>
-                    </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-card-foreground">
-                      {detail.batteryTotalDischargeEnergy?.toFixed(1)} <span className="text-muted-foreground">{detail.batteryTotalDischargeEnergyStr}</span>
-                    </td>
+                    <ECell v={detail.batteryTodayDischargeEnergy} u={detail.batteryTodayDischargeEnergyStr} cls="px-3 py-2.5 text-right tabular-nums text-card-foreground" />
+                    <WkCell v={wk.battDischarge} cls={`${tdHidden} sm:table-cell`} />
+                    <ECell v={detail.batteryMonthDischargeEnergy} u={detail.batteryMonthDischargeEnergyStr || "kWh"} cls={`${tdHidden} sm:table-cell`} />
+                    <ECell v={detail.batteryYearDischargeEnergy} u={detail.batteryYearDischargeEnergyStr || "kWh"} cls={`${tdHidden} md:table-cell`} />
+                    <ECell v={detail.batteryTotalDischargeEnergy} u={detail.batteryTotalDischargeEnergyStr} cls="px-3 py-2.5 text-right tabular-nums text-card-foreground" />
                   </tr>
                   ) : null}
                   {(detail.backupTodayEnergy || detail.backupTotalEnergy) ? (
@@ -498,15 +453,11 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
                       <td className="flex items-center gap-2 px-3 py-2.5 font-medium text-card-foreground">
                         <PlugZap className="h-3.5 w-3.5 text-muted-foreground" /> Backup Load
                       </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-card-foreground">
-                        {detail.backupTodayEnergy?.toFixed(1)} <span className="text-muted-foreground">{detail.backupTodayEnergyStr}</span>
-                      </td>
+                      <ECell v={detail.backupTodayEnergy} u={detail.backupTodayEnergyStr} cls="px-3 py-2.5 text-right tabular-nums text-card-foreground" />
                       <td className={`${tdHidden} sm:table-cell`}>--</td>
                       <td className={`${tdHidden} sm:table-cell`}>--</td>
                       <td className={`${tdHidden} md:table-cell`}>--</td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-card-foreground">
-                        {detail.backupTotalEnergy?.toFixed(1)} <span className="text-muted-foreground">{detail.backupTotalEnergyStr}</span>
-                      </td>
+                      <ECell v={detail.backupTotalEnergy} u={detail.backupTotalEnergyStr} cls="px-3 py-2.5 text-right tabular-nums text-card-foreground" />
                     </tr>
                   ) : null}
                 </tbody>

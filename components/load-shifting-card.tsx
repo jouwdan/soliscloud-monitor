@@ -21,6 +21,7 @@ import {
   getCurrencySettings,
   getExportPrice,
   toKW,
+  toKWh,
   type InverterDayEntry,
   type InverterDetail,
   type InverterMonthEntry,
@@ -230,6 +231,12 @@ function formatHour(h: number) {
 
 type Period = "day" | "week" | "month" | "year" | "lifetime"
 
+/** Format a kWh value with adaptive unit */
+function fmtE(kwh: number): { text: string; unit: string } {
+  if (kwh >= 1000) return { text: (kwh / 1000).toFixed(2), unit: "MWh" }
+  return { text: kwh.toFixed(1), unit: "kWh" }
+}
+
 interface PeriodSummary {
   label: string
   gridImport: number
@@ -251,29 +258,34 @@ function computePeriodSummaries(
   avgRate: number,
   exportRate: number,
 ): Record<Period, PeriodSummary> {
-  // Day
-  const dayImport = detail.gridPurchasedTodayEnergy || 0
-  const dayExport = detail.gridSellTodayEnergy || 0
-  const dayImportCost = dayImport * avgRate
-  const dayExportRev = dayExport * exportRate
+  // Shorthand: normalise a detail energy value to kWh using its companion *Str field
+  const k = (val: number | undefined, unitStr: string | undefined) => toKWh(val, unitStr)
 
-  // Week (last 7 days from month data)
+  // Day (Today values – typically already in kWh but normalise to be safe)
+  const dayImport = k(detail.gridPurchasedTodayEnergy, detail.gridPurchasedTodayEnergyStr)
+  const dayExport = k(detail.gridSellTodayEnergy, detail.gridSellTodayEnergyStr)
+
+  // Week (last 7 days from month data – month entries are always in kWh)
   const sorted = [...monthData].sort((a, b) => (b.date || 0) - (a.date || 0))
   const weekDays = sorted.slice(0, 7)
   const weekImport = weekDays.reduce((s, d) => s + (d.gridPurchasedEnergy || 0), 0)
   const weekExport = weekDays.reduce((s, d) => s + (d.gridSellEnergy || 0), 0)
 
-  // Month
-  const monthImport = detail.gridPurchasedMonthEnergy ?? monthData.reduce((s, d) => s + (d.gridPurchasedEnergy || 0), 0)
-  const monthExport = detail.gridSellMonthEnergy ?? monthData.reduce((s, d) => s + (d.gridSellEnergy || 0), 0)
+  // Month – prefer detail aggregate (normalised), fall back to summing entries
+  const monthImportFb = monthData.reduce((s, d) => s + (d.gridPurchasedEnergy || 0), 0)
+  const monthExportFb = monthData.reduce((s, d) => s + (d.gridSellEnergy || 0), 0)
+  const monthImport = detail.gridPurchasedMonthEnergy != null ? k(detail.gridPurchasedMonthEnergy, detail.gridPurchasedMonthEnergyStr) : monthImportFb
+  const monthExport = detail.gridSellMonthEnergy != null ? k(detail.gridSellMonthEnergy, detail.gridSellMonthEnergyStr) : monthExportFb
 
   // Year
-  const yearImport = detail.gridPurchasedYearEnergy ?? yearData.reduce((s, d) => s + (d.gridPurchasedEnergy || 0), 0)
-  const yearExport = detail.gridSellYearEnergy ?? yearData.reduce((s, d) => s + (d.gridSellEnergy || 0), 0)
+  const yearImportFb = yearData.reduce((s, d) => s + (d.gridPurchasedEnergy || 0), 0)
+  const yearExportFb = yearData.reduce((s, d) => s + (d.gridSellEnergy || 0), 0)
+  const yearImport = detail.gridPurchasedYearEnergy != null ? k(detail.gridPurchasedYearEnergy, detail.gridPurchasedYearEnergyStr) : yearImportFb
+  const yearExport = detail.gridSellYearEnergy != null ? k(detail.gridSellYearEnergy, detail.gridSellYearEnergyStr) : yearExportFb
 
   // Lifetime
-  const totalImport = detail.gridPurchasedTotalEnergy || 0
-  const totalExport = detail.gridSellTotalEnergy || 0
+  const totalImport = k(detail.gridPurchasedTotalEnergy, detail.gridPurchasedTotalEnergyStr)
+  const totalExport = k(detail.gridSellTotalEnergy, detail.gridSellTotalEnergyStr)
 
   const make = (label: string, imp: number, exp: number, prod: number, cons: number, battC: number, battD: number, days: number): PeriodSummary => ({
     label,
@@ -291,8 +303,10 @@ function computePeriodSummaries(
 
   return {
     day: make("Today", dayImport, dayExport,
-      detail.eToday || 0, detail.homeLoadTodayEnergy || 0,
-      detail.batteryTodayChargeEnergy || 0, detail.batteryTodayDischargeEnergy || 0, 1),
+      k(detail.eToday, detail.eTodayStr),
+      k(detail.homeLoadTodayEnergy, detail.homeLoadTodayEnergyStr),
+      k(detail.batteryTodayChargeEnergy, detail.batteryTodayChargeEnergyStr),
+      k(detail.batteryTodayDischargeEnergy, detail.batteryTodayDischargeEnergyStr), 1),
     week: make("This Week", weekImport, weekExport,
       weekDays.reduce((s, d) => s + (d.energy || 0), 0),
       weekDays.reduce((s, d) => s + (d.homeLoadEnergy || 0), 0),
@@ -300,18 +314,22 @@ function computePeriodSummaries(
       weekDays.reduce((s, d) => s + (d.batteryDischargeEnergy || 0), 0),
       weekDays.length),
     month: make("This Month", monthImport, monthExport,
-      detail.eMonth || 0, detail.homeLoadMonthEnergy ?? monthData.reduce((s, d) => s + (d.homeLoadEnergy || 0), 0),
-      detail.batteryMonthChargeEnergy ?? monthData.reduce((s, d) => s + (d.batteryChargeEnergy || 0), 0),
-      detail.batteryMonthDischargeEnergy ?? monthData.reduce((s, d) => s + (d.batteryDischargeEnergy || 0), 0),
+      k(detail.eMonth, detail.eMonthStr),
+      detail.homeLoadMonthEnergy != null ? k(detail.homeLoadMonthEnergy, detail.homeLoadMonthEnergyStr) : monthData.reduce((s, d) => s + (d.homeLoadEnergy || 0), 0),
+      detail.batteryMonthChargeEnergy != null ? k(detail.batteryMonthChargeEnergy, detail.batteryMonthChargeEnergyStr) : monthData.reduce((s, d) => s + (d.batteryChargeEnergy || 0), 0),
+      detail.batteryMonthDischargeEnergy != null ? k(detail.batteryMonthDischargeEnergy, detail.batteryMonthDischargeEnergyStr) : monthData.reduce((s, d) => s + (d.batteryDischargeEnergy || 0), 0),
       monthData.length || 30),
     year: make("This Year", yearImport, yearExport,
-      detail.eYear || 0, detail.homeLoadYearEnergy ?? yearData.reduce((s, d) => s + (d.homeLoadEnergy || 0), 0),
-      detail.batteryYearChargeEnergy ?? yearData.reduce((s, d) => s + (d.batteryChargeEnergy || 0), 0),
-      detail.batteryYearDischargeEnergy ?? yearData.reduce((s, d) => s + (d.batteryDischargeEnergy || 0), 0),
+      k(detail.eYear, detail.eYearStr),
+      detail.homeLoadYearEnergy != null ? k(detail.homeLoadYearEnergy, detail.homeLoadYearEnergyStr) : yearData.reduce((s, d) => s + (d.homeLoadEnergy || 0), 0),
+      detail.batteryYearChargeEnergy != null ? k(detail.batteryYearChargeEnergy, detail.batteryYearChargeEnergyStr) : yearData.reduce((s, d) => s + (d.batteryChargeEnergy || 0), 0),
+      detail.batteryYearDischargeEnergy != null ? k(detail.batteryYearDischargeEnergy, detail.batteryYearDischargeEnergyStr) : yearData.reduce((s, d) => s + (d.batteryDischargeEnergy || 0), 0),
       yearData.length || 365),
     lifetime: make("Lifetime", totalImport, totalExport,
-      detail.eTotal || 0, detail.homeLoadTotalEnergy || 0,
-      detail.batteryTotalChargeEnergy || 0, detail.batteryTotalDischargeEnergy || 0, 0),
+      k(detail.eTotal, detail.eTotalStr),
+      k(detail.homeLoadTotalEnergy, detail.homeLoadTotalEnergyStr),
+      k(detail.batteryTotalChargeEnergy, detail.batteryTotalChargeEnergyStr),
+      k(detail.batteryTotalDischargeEnergy, detail.batteryTotalDischargeEnergyStr), 0),
   }
 }
 
@@ -679,64 +697,64 @@ export function LoadShiftingCard({ detail, dayData, monthData, yearData }: LoadS
           <>
             {/* Energy overview grid */}
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {(() => { const f = fmtE(currentSummary.production); return (
               <div className="rounded-lg border p-3 text-center">
                 <p className="text-xs text-muted-foreground">Production</p>
-                <p className="mt-1 text-lg font-bold tabular-nums text-card-foreground">
-                  {currentSummary.production.toFixed(1)}
-                </p>
-                <p className="text-xs text-muted-foreground">kWh</p>
+                <p className="mt-1 text-lg font-bold tabular-nums text-card-foreground">{f.text}</p>
+                <p className="text-xs text-muted-foreground">{f.unit}</p>
               </div>
+              )})()}
+              {(() => { const f = fmtE(currentSummary.consumption); return (
               <div className="rounded-lg border p-3 text-center">
                 <p className="text-xs text-muted-foreground">Consumption</p>
-                <p className="mt-1 text-lg font-bold tabular-nums text-card-foreground">
-                  {currentSummary.consumption.toFixed(1)}
-                </p>
-                <p className="text-xs text-muted-foreground">kWh</p>
+                <p className="mt-1 text-lg font-bold tabular-nums text-card-foreground">{f.text}</p>
+                <p className="text-xs text-muted-foreground">{f.unit}</p>
               </div>
+              )})()}
+              {(() => { const f = fmtE(Math.max(0, currentSummary.production - currentSummary.gridExport)); return (
               <div className="rounded-lg border p-3 text-center">
                 <p className="text-xs text-muted-foreground">Self-Consumed</p>
-                <p className="mt-1 text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
-                  {Math.max(0, currentSummary.production - currentSummary.gridExport).toFixed(1)}
-                </p>
-                <p className="text-xs text-muted-foreground">kWh</p>
+                <p className="mt-1 text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{f.text}</p>
+                <p className="text-xs text-muted-foreground">{f.unit}</p>
               </div>
+              )})()}
             </div>
 
             {/* Grid exchange */}
             <div className="grid grid-cols-2 gap-3">
+              {(() => { const f = fmtE(currentSummary.gridImport); return (
               <div className="rounded-lg border p-3 text-center">
                 <p className="text-xs text-muted-foreground">Grid Import</p>
-                <p className="mt-1 text-lg font-bold tabular-nums text-red-500">
-                  {currentSummary.gridImport.toFixed(1)}
-                </p>
-                <p className="text-xs text-muted-foreground">kWh</p>
+                <p className="mt-1 text-lg font-bold tabular-nums text-red-500">{f.text}</p>
+                <p className="text-xs text-muted-foreground">{f.unit}</p>
               </div>
+              )})()}
+              {(() => { const f = fmtE(currentSummary.gridExport); return (
               <div className="rounded-lg border p-3 text-center">
                 <p className="text-xs text-muted-foreground">Grid Export</p>
-                <p className="mt-1 text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
-                  {currentSummary.gridExport.toFixed(1)}
-                </p>
-                <p className="text-xs text-muted-foreground">kWh</p>
+                <p className="mt-1 text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{f.text}</p>
+                <p className="text-xs text-muted-foreground">{f.unit}</p>
               </div>
+              )})()}
             </div>
 
             {/* Battery */}
             {(currentSummary.batteryCharge > 0 || currentSummary.batteryDischarge > 0) && (
               <div className="grid grid-cols-2 gap-3">
+                {(() => { const f = fmtE(currentSummary.batteryCharge); return (
                 <div className="rounded-lg border p-3 text-center">
                   <p className="text-xs text-muted-foreground">Battery Charge</p>
-                  <p className="mt-1 text-lg font-bold tabular-nums text-card-foreground">
-                    {currentSummary.batteryCharge.toFixed(1)}
-                  </p>
-                  <p className="text-xs text-muted-foreground">kWh</p>
+                  <p className="mt-1 text-lg font-bold tabular-nums text-card-foreground">{f.text}</p>
+                  <p className="text-xs text-muted-foreground">{f.unit}</p>
                 </div>
+                )})()}
+                {(() => { const f = fmtE(currentSummary.batteryDischarge); return (
                 <div className="rounded-lg border p-3 text-center">
                   <p className="text-xs text-muted-foreground">Battery Discharge</p>
-                  <p className="mt-1 text-lg font-bold tabular-nums text-card-foreground">
-                    {currentSummary.batteryDischarge.toFixed(1)}
-                  </p>
-                  <p className="text-xs text-muted-foreground">kWh</p>
+                  <p className="mt-1 text-lg font-bold tabular-nums text-card-foreground">{f.text}</p>
+                  <p className="text-xs text-muted-foreground">{f.unit}</p>
                 </div>
+                )})()}
               </div>
             )}
 
@@ -786,8 +804,8 @@ export function LoadShiftingCard({ detail, dayData, monthData, yearData }: LoadS
                 <p className="text-xs leading-relaxed text-muted-foreground">
                   <strong className="text-card-foreground">Daily average:</strong>{" "}
                   {currency.symbol}{(currentSummary.netCost / currentSummary.days).toFixed(2)} net cost,{" "}
-                  {(currentSummary.gridImport / currentSummary.days).toFixed(1)} kWh imported,{" "}
-                  {(currentSummary.gridExport / currentSummary.days).toFixed(1)} kWh exported
+                  {fmtE(currentSummary.gridImport / currentSummary.days).text} {fmtE(currentSummary.gridImport / currentSummary.days).unit} imported,{" "}
+                  {fmtE(currentSummary.gridExport / currentSummary.days).text} {fmtE(currentSummary.gridExport / currentSummary.days).unit} exported
                   {" "}&middot; Based on {currentSummary.days} day{currentSummary.days !== 1 ? "s" : ""} of data
                 </p>
               </div>

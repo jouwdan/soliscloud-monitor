@@ -266,6 +266,25 @@ export function toKW(
   return value
 }
 
+/**
+ * Normalise an energy value to **kWh**.
+ * The Solis API returns energy in whatever unit it likes and puts the unit
+ * label in the companion `*Str` field (e.g. "kWh", "MWh", "Wh", "GWh").
+ * If the unit string is missing or unrecognised we fall back to kWh.
+ */
+export function toKWh(
+  value: number | undefined,
+  unitStr: string | undefined
+): number {
+  if (value === undefined || value === null) return 0
+  const u = (unitStr || "").toLowerCase().replace(/\s/g, "")
+  if (u.startsWith("mwh")) return value * 1000
+  if (u.startsWith("gwh")) return value * 1_000_000
+  if (u.startsWith("wh") && !u.startsWith("whi")) return value / 1000
+  // "kwh" or anything else → assume already kWh
+  return value
+}
+
 // ---------- Generic fetcher ----------
 
 async function solisFetcher<T = unknown>([endpoint, body]: [
