@@ -8,6 +8,7 @@ const SOLAR_COLOR = "#f59e0b" // amber-500
 const GRID_COLOR = "#6b7280"  // gray-500
 const HOME_COLOR = "#3b82f6"  // blue-500
 const BATTERY_COLOR = "#22c55e" // green-500
+const PV_STRING_COLOR = "#fbbf24" // amber-400
 
 /* Dot size */
 const DOT_R = 3
@@ -118,6 +119,35 @@ function NodeBubble({
   )
 }
 
+/* ─── PV string pill ─── */
+function PvStringPill({
+  x,
+  y,
+  label,
+  voltage,
+  current,
+  power,
+}: {
+  x: number
+  y: number
+  label: string
+  voltage: number
+  current: number
+  power: number
+}) {
+  const active = power > 0.01
+  return (
+    <foreignObject x={x - 38} y={y - 16} width={76} height={32}>
+      <div className={`flex h-full w-full flex-col items-center justify-center rounded-full border text-center ${active ? "border-amber-500/40 bg-amber-500/10" : "border-muted bg-muted/30"}`}>
+        <span className="text-[8px] font-medium text-muted-foreground leading-none">{label}</span>
+        <span className="text-[9px] font-bold tabular-nums text-card-foreground leading-none">
+          {power > 0.01 ? `${power.toFixed(0)}W` : "—"}
+        </span>
+      </div>
+    </foreignObject>
+  )
+}
+
 /* ─── main component ─── */
 export function PowerFlow({ detail }: { detail: InverterDetail }) {
   const solarPower = detail.pac || 0
@@ -130,6 +160,25 @@ export function PowerFlow({ detail }: { detail: InverterDetail }) {
     (detail.batteryCapacitySoc || detail.batteryTotalChargeEnergy || detail.batteryTotalDischargeEnergy)
   )
 
+  /* PV strings — detect how many are active based on dcInputType and actual values */
+  const pvStrings: { label: string; voltage: number; current: number; power: number }[] = []
+  const pvData = [
+    { v: detail.uPv1 || 0, i: detail.iPv1 || 0, p: detail.pow1 || 0 },
+    { v: detail.uPv2 || 0, i: detail.iPv2 || 0, p: detail.pow2 || 0 },
+    { v: detail.uPv3 || 0, i: detail.iPv3 || 0, p: detail.pow3 || 0 },
+    { v: detail.uPv4 || 0, i: detail.iPv4 || 0, p: detail.pow4 || 0 },
+  ]
+  const dcInputType = detail.dcInputType || 2
+  for (let i = 0; i < Math.min(dcInputType, 4); i++) {
+    pvStrings.push({
+      label: `PV${i + 1}`,
+      voltage: pvData[i].v,
+      current: pvData[i].i,
+      power: pvData[i].p,
+    })
+  }
+  const hasStrings = pvStrings.length > 0
+
   /* Whether each flow is active (power > small threshold) */
   const solarActive = solarPower > 0.01
   const gridImporting = gridPower > 0.01
@@ -138,13 +187,16 @@ export function PowerFlow({ detail }: { detail: InverterDetail }) {
   const batteryDischarging = batteryPower < -0.01
   const homeActive = homePower > 0.01
 
-  /* Node positions — center is 200,200 on a 400x400 viewBox */
+  /* Node positions — viewBox is 400 x 460 when strings shown, 400 x 400 otherwise */
+  const stringRowY = 20      // y-centre of PV string pills
+  const yOffset = hasStrings ? 60 : 0 // push main diagram down when strings present
   const cx = 200
-  const cy = 200
-  const solar = { x: cx, y: 52 }
+  const cy = 200 + yOffset
+  const solar = { x: cx, y: 52 + yOffset }
   const home = { x: 348, y: cy }
-  const grid = { x: cx, y: 348 }
+  const grid = { x: cx, y: 348 + yOffset }
   const battery = { x: 52, y: cy }
+  const viewH = 400 + yOffset
 
   /* Line opacity helpers */
   const solarToHome = solarActive && homeActive
@@ -154,13 +206,52 @@ export function PowerFlow({ detail }: { detail: InverterDetail }) {
   const batteryToHome = hasBattery && batteryDischarging && homeActive
 
   return (
-    <div className="relative mx-auto w-full max-w-md aspect-square">
+    <div className="relative mx-auto w-full max-w-md" style={{ aspectRatio: `400 / ${viewH}` }}>
       <svg
-        viewBox="0 0 400 400"
+        viewBox={`0 0 400 ${viewH}`}
         className="h-full w-full"
         xmlns="http://www.w3.org/2000/svg"
         xmlnsXlink="http://www.w3.org/1999/xlink"
       >
+        {/* ─── PV Strings → Solar ─── */}
+        {hasStrings && (() => {
+          const count = pvStrings.length
+          const spacing = 84
+          const totalW = (count - 1) * spacing
+          const startX = cx - totalW / 2
+          return (
+            <>
+              {pvStrings.map((s, i) => {
+                const px = startX + i * spacing
+                const active = s.power > 0.01
+                const pathId = `path-pv${i + 1}-solar`
+                return (
+                  <g key={i}>
+                    <path
+                      id={pathId}
+                      d={`M ${px} ${stringRowY + 16} L ${solar.x} ${solar.y - 50}`}
+                      fill="none"
+                      stroke={PV_STRING_COLOR}
+                      strokeWidth={active ? 1.5 : 1}
+                      strokeDasharray={active ? "none" : "3 3"}
+                      opacity={active ? 0.4 : 0.1}
+                    />
+                    {active && <FlowDots pathId={pathId} color={PV_STRING_COLOR} active count={2} />}
+                    <PvStringPill
+                      x={px}
+                      y={stringRowY}
+                      label={s.label}
+                      voltage={s.voltage}
+                      current={s.current}
+                      power={s.power}
+                    />
+                  </g>
+                )
+              })}
+            </>
+          )
+        })()}
+
         {/* ─── Paths (invisible references for animateMotion) ─── */}
         {/* Solar → Home (curve right) */}
         <path
