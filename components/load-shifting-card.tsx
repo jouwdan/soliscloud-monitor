@@ -6,9 +6,11 @@ import {
   Sun,
   ArrowDownToLine,
   Battery,
+  BatteryCharging,
   TrendingUp,
   Info,
   Coins,
+  Zap,
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -68,6 +70,12 @@ interface LoadShiftingAnalysis {
   gridExportRevenue: number
   netCost: number
   costWithoutSolar: number
+  // Battery economics
+  batteryChargeCost: number      // cost of energy used to charge battery
+  batteryDischargeValue: number  // value of grid imports avoided by discharging
+  batteryNetBenefit: number      // dischargeValue - chargeCost
+  batteryChargeAvgRate: number   // weighted avg rate during charging
+  batteryDischargeAvgRate: number // weighted avg rate during discharging
 }
 
 function analyzeLoadShifting(
@@ -88,6 +96,10 @@ function analyzeLoadShifting(
   let peakGridCost = 0
   let gridExportRevenue = 0
   let totalLoadEnergy = 0
+  let batteryChargeCost = 0
+  let batteryDischargeValue = 0
+  let totalBatteryChargeEnergy = 0
+  let totalBatteryDischargeEnergy = 0
   const feedInRate = getExportPrice()
 
   // Per-tariff-group accumulators
@@ -139,6 +151,19 @@ function analyzeLoadShifting(
       acc.gridImport += imported
       acc.consumption += loadPower * intervalHours
       acc.cost += imported * rate // rate is in currency/kWh as entered by user
+    }
+
+    // Battery economics: track cost of charging and value of discharging at current rate
+    if (battPower > 0) {
+      // Charging – cost is the rate we're paying at this hour
+      const chargeEnergy = battPower * intervalHours
+      batteryChargeCost += chargeEnergy * rate
+      totalBatteryChargeEnergy += chargeEnergy
+    } else if (battPower < 0) {
+      // Discharging – value is the grid rate we're avoiding at this hour
+      const dischargeEnergy = Math.abs(battPower) * intervalHours
+      batteryDischargeValue += dischargeEnergy * rate
+      totalBatteryDischargeEnergy += dischargeEnergy
     }
 
     // Track total load for "without solar" cost
@@ -220,6 +245,11 @@ function analyzeLoadShifting(
     gridExportRevenue,
     netCost,
     costWithoutSolar,
+    batteryChargeCost,
+    batteryDischargeValue,
+    batteryNetBenefit: batteryDischargeValue - batteryChargeCost,
+    batteryChargeAvgRate: totalBatteryChargeEnergy > 0 ? batteryChargeCost / totalBatteryChargeEnergy : 0,
+    batteryDischargeAvgRate: totalBatteryDischargeEnergy > 0 ? batteryDischargeValue / totalBatteryDischargeEnergy : 0,
   }
 }
 
@@ -621,6 +651,55 @@ export function LoadShiftingCard({ detail, dayData, monthData, yearData }: LoadS
               </div>
             )}
 
+            {/* Battery Economics */}
+            {hasBattery && analysis.hasRates && (analysis.batteryChargeCost > 0.001 || analysis.batteryDischargeValue > 0.001) && (
+              <div className="rounded-lg border p-4">
+                <div className="mb-3 flex items-center gap-2">
+                  <BatteryCharging className="h-4 w-4 text-primary" />
+                  <h3 className="text-sm font-semibold text-card-foreground">Battery Economics (Today)</h3>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="rounded-lg bg-muted/40 p-3 text-center">
+                    <p className="text-xs text-muted-foreground">Charge Cost</p>
+                    <p className="mt-1 text-lg font-bold tabular-nums text-card-foreground">
+                      {currency.symbol}{analysis.batteryChargeCost.toFixed(2)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {analysis.offPeakBatteryCharge.toFixed(1)} kWh @ avg {currency.symbol}{analysis.batteryChargeAvgRate.toFixed(2)}/kWh
+                    </p>
+                  </div>
+                  <div className="rounded-lg bg-muted/40 p-3 text-center">
+                    <p className="text-xs text-muted-foreground">Discharge Value</p>
+                    <p className="mt-1 text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+                      {currency.symbol}{analysis.batteryDischargeValue.toFixed(2)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {analysis.peakBatteryDischarge.toFixed(1)} kWh @ avg {currency.symbol}{analysis.batteryDischargeAvgRate.toFixed(2)}/kWh
+                    </p>
+                  </div>
+                  <div className={`rounded-lg p-3 text-center ${analysis.batteryNetBenefit >= 0 ? "bg-emerald-500/10 border border-emerald-500/30" : "bg-red-500/10 border border-red-500/30"}`}>
+                    <p className="text-xs text-muted-foreground">Net Benefit</p>
+                    <p className={`mt-1 text-lg font-bold tabular-nums ${analysis.batteryNetBenefit >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-500"}`}>
+                      {analysis.batteryNetBenefit >= 0 ? "+" : ""}{currency.symbol}{analysis.batteryNetBenefit.toFixed(2)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {analysis.batteryNetBenefit >= 0 ? "saved vs grid" : "rate arbitrage loss"}
+                    </p>
+                  </div>
+                </div>
+                {analysis.batteryNetBenefit > 0.01 && (
+                  <div className="mt-3 flex items-center gap-2 rounded bg-emerald-500/5 px-3 py-2">
+                    <Zap className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                    <p className="text-xs text-muted-foreground">
+                      Battery arbitrage is profitable: charging at avg <strong className="text-card-foreground">{currency.symbol}{analysis.batteryChargeAvgRate.toFixed(2)}/kWh</strong> and
+                      displacing grid at avg <strong className="text-card-foreground">{currency.symbol}{analysis.batteryDischargeAvgRate.toFixed(2)}/kWh</strong> saves{" "}
+                      <strong className="text-emerald-600 dark:text-emerald-400">{currency.symbol}{analysis.batteryNetBenefit.toFixed(2)}</strong> today.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Tariff breakdown */}
             {analysis.hasRates && analysis.tariffBreakdown.length > 0 && (
               <div className="space-y-2">
@@ -757,6 +836,61 @@ export function LoadShiftingCard({ detail, dayData, monthData, yearData }: LoadS
                 )})()}
               </div>
             )}
+
+            {/* Battery Economics (period) */}
+            {(currentSummary.batteryCharge > 0 || currentSummary.batteryDischarge > 0) && avgRate > 0 && (() => {
+              // For non-day periods we estimate using the lowest and highest tariff rates
+              const rates = tariffGroups.filter((g) => g.rate > 0).map((g) => g.rate)
+              const minRate = rates.length > 0 ? Math.min(...rates) : avgRate
+              const maxRate = rates.length > 0 ? Math.max(...rates) : avgRate
+              const estChargeCost = currentSummary.batteryCharge * minRate
+              const estDischargeValue = currentSummary.batteryDischarge * maxRate
+              const estBenefit = estDischargeValue - estChargeCost
+              return (
+              <div className="rounded-lg border p-4">
+                <div className="mb-3 flex items-center gap-2">
+                  <BatteryCharging className="h-4 w-4 text-primary" />
+                  <h3 className="text-sm font-semibold text-card-foreground">Battery Economics (est.)</h3>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="rounded-lg bg-muted/40 p-3 text-center">
+                    <p className="text-xs text-muted-foreground">Charge Cost</p>
+                    <p className="mt-1 text-lg font-bold tabular-nums text-card-foreground">
+                      {currency.symbol}{estChargeCost.toFixed(2)}
+                    </p>
+                    {(() => { const f = fmtE(currentSummary.batteryCharge); return (
+                    <p className="text-xs text-muted-foreground">
+                      {f.text} {f.unit} @ {currency.symbol}{minRate.toFixed(2)}
+                    </p>
+                    )})()}
+                  </div>
+                  <div className="rounded-lg bg-muted/40 p-3 text-center">
+                    <p className="text-xs text-muted-foreground">Discharge Value</p>
+                    <p className="mt-1 text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+                      {currency.symbol}{estDischargeValue.toFixed(2)}
+                    </p>
+                    {(() => { const f = fmtE(currentSummary.batteryDischarge); return (
+                    <p className="text-xs text-muted-foreground">
+                      {f.text} {f.unit} @ {currency.symbol}{maxRate.toFixed(2)}
+                    </p>
+                    )})()}
+                  </div>
+                  <div className={`rounded-lg p-3 text-center ${estBenefit >= 0 ? "bg-emerald-500/10 border border-emerald-500/30" : "bg-red-500/10 border border-red-500/30"}`}>
+                    <p className="text-xs text-muted-foreground">Net Benefit</p>
+                    <p className={`mt-1 text-lg font-bold tabular-nums ${estBenefit >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-500"}`}>
+                      {estBenefit >= 0 ? "+" : ""}{currency.symbol}{estBenefit.toFixed(2)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {estBenefit >= 0 ? "saved vs grid" : "rate gap loss"}
+                    </p>
+                  </div>
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground italic">
+                  Estimated using cheapest rate ({currency.symbol}{minRate.toFixed(2)}) for charging, peak rate ({currency.symbol}{maxRate.toFixed(2)}) for discharge value.
+                </p>
+              </div>
+              )
+            })()}
 
             {/* Cost summary */}
             {avgRate > 0 && (
