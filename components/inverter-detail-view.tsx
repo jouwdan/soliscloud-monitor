@@ -49,18 +49,23 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
   const tariffGroups = useMemo(() => getTariffGroups(), [])
   const hasRates = tariffGroups.some((g) => g.rate > 0)
 
-  /** Compute TOU-weighted cost from 5-min day entries */
-  const computeTOUCost = useCallback((data: InverterDayEntry[]) => {
-    if (!data.length || !hasRates) return { gridCost: 0, exportRev: 0, selfSuppliedValue: 0, gridToHomeCost: 0 }
+  /** Compute TOU-weighted cost from 5-min day entries using proportional scaling.
+   *  The dayData power readings may not integrate to the same totals as the metered
+   *  detail endpoint, so we use dayData only for the *shape* of the distribution
+   *  across tariff periods, then scale to metered import/export totals. */
+  const computeTOUCost = useCallback((data: InverterDayEntry[], meteredImport: number, meteredExport: number, meteredLoad: number) => {
+    if (!data.length || !hasRates) return { gridCost: 0, exportRev: 0, fullGridCost: 0 }
     const sorted = [...data].sort((a, b) => Number(a.dataTimestamp) - Number(b.dataTimestamp))
-    let gridImportCost = 0
-    let gridExportRev = 0
+    // Accumulate raw proportional shares per tariff group
+    const groupRaw = new Map<string, { gi: number; ld: number }>()
+    for (const g of tariffGroups) groupRaw.set(g.id, { gi: 0, ld: 0 })
+
+    let rawGI = 0, rawGE = 0, rawLoad = 0
     for (let i = 0; i < sorted.length; i++) {
       const entry = sorted[i]
       let ts = Number(entry.dataTimestamp)
       if (ts > 0 && ts < 1e12) ts *= 1000
       const hour = new Date(ts).getHours()
-      const rate = getRateForHour(hour, tariffGroups)
 
       let intervalHours = 5 / 60
       if (i > 0) {
@@ -74,14 +79,35 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
       const sharedPec = entry.pacPec
       const gridPec = (raw.psumPec ?? raw.psumCalPec ?? raw.pSumPec ?? sharedPec) as string | undefined
       const gridPower = toKW(entry.pSum, entry.pSumStr, gridPec)
+      const loadPower = toKW(entry.familyLoadPower, entry.familyLoadPowerStr, ((raw.familyLoadPowerPec ?? sharedPec) as string | undefined))
 
-      if (gridPower > 0) {
-        gridImportCost += gridPower * intervalHours * rate
-      } else {
-        gridExportRev += Math.abs(gridPower) * intervalHours * exportRate
+      const gi = gridPower > 0 ? gridPower * intervalHours : 0
+      const ge = gridPower < 0 ? Math.abs(gridPower) * intervalHours : 0
+      const ld = loadPower > 0 ? loadPower * intervalHours : 0
+      rawGI += gi; rawGE += ge; rawLoad += ld
+
+      const matchedGroup = tariffGroups.find((g) => {
+        if (g.startHour > g.endHour) return hour >= g.startHour || hour < g.endHour
+        return hour >= g.startHour && hour < g.endHour
+      })
+      if (matchedGroup) {
+        const acc = groupRaw.get(matchedGroup.id)!
+        acc.gi += gi; acc.ld += ld
       }
     }
-    return { gridCost: gridImportCost, exportRev: gridExportRev }
+
+    // Scale to metered totals
+    const scaleGI = rawGI > 0 ? meteredImport / rawGI : 0
+    const scaleLD = rawLoad > 0 ? meteredLoad / rawLoad : 0
+    let gridCost = 0
+    let fullGridCost = 0
+    for (const g of tariffGroups) {
+      const raw = groupRaw.get(g.id)!
+      gridCost += raw.gi * scaleGI * g.rate
+      fullGridCost += raw.ld * scaleLD * g.rate
+    }
+    const exportRev = meteredExport * exportRate
+    return { gridCost, exportRev, fullGridCost }
   }, [tariffGroups, hasRates, exportRate])
 
   const { data: dayData } = useInverterDay(id, sn, today, "8")
@@ -250,37 +276,12 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
               ? (selfSupplied / consumed) * 100
               : 0
 
-            // Use actual TOU costs from dayData instead of flat avgRate
-            const touToday = computeTOUCost(dayData || [])
+            // Use TOU costs with proportional scaling to metered totals
+            const touToday = computeTOUCost(dayData || [], imported, exported, consumed)
             const gridCostToday = touToday.gridCost
             const exportRevenue = touToday.exportRev
             const netCostToday = gridCostToday - exportRevenue
-            // Value saved = what we would have paid for the self-supplied energy at TOU rates
-            // Approximate by: total cost if ALL consumption from grid minus actual grid cost
-            const fullGridCost = (() => {
-              if (!dayData?.length || !hasRates) return 0
-              const sorted = [...dayData].sort((a, b) => Number(a.dataTimestamp) - Number(b.dataTimestamp))
-              let cost = 0
-              for (let i = 0; i < sorted.length; i++) {
-                const entry = sorted[i]
-                let ts = Number(entry.dataTimestamp)
-                if (ts > 0 && ts < 1e12) ts *= 1000
-                const hour = new Date(ts).getHours()
-                const rate = getRateForHour(hour, tariffGroups)
-                let intervalHours = 5 / 60
-                if (i > 0) {
-                  let prev = Number(sorted[i - 1].dataTimestamp)
-                  if (prev > 0 && prev < 1e12) prev *= 1000
-                  const diff = (ts - prev) / (1000 * 60 * 60)
-                  if (diff > 0 && diff < 1) intervalHours = diff
-                }
-                const raw = entry as Record<string, unknown>
-                const sharedPec = entry.pacPec
-                const loadPower = toKW(entry.familyLoadPower, entry.familyLoadPowerStr, ((raw.familyLoadPowerPec ?? sharedPec) as string | undefined))
-                cost += loadPower * intervalHours * rate
-              }
-              return cost
-            })()
+            const fullGridCost = touToday.fullGridCost
             const valueSaved = Math.max(0, fullGridCost - gridCostToday)
 
             return (

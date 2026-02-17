@@ -80,32 +80,35 @@ interface LoadShiftingAnalysis {
 function analyzeLoadShifting(
   dayData: InverterDayEntry[],
   settings: OffPeakSettings,
-  tariffGroups: TariffGroup[]
+  tariffGroups: TariffGroup[],
+  detail: InverterDetail,
 ): LoadShiftingAnalysis {
-  let offPeakGridImport = 0
-  let peakGridImport = 0
-  let offPeakBatteryCharge = 0
-  let peakBatteryDischarge = 0
-  let peakSolarDirect = 0
-  let offPeakConsumption = 0
-  let peakConsumption = 0
-  let offPeakPoints = 0
-  let peakPoints = 0
-  let offPeakGridCost = 0
-  let peakGridCost = 0
-  let gridExportRevenue = 0
-  let totalLoadEnergy = 0
-  let batteryChargeCost = 0
-  let batteryDischargeValue = 0
-  let totalBatteryChargeEnergy = 0
-  let totalBatteryDischargeEnergy = 0
+  // ── Authoritative metered totals from detail endpoint ──
+  const mGridImport = toKWh(detail.gridPurchasedTodayEnergy, detail.gridPurchasedTodayEnergyStr)
+  const mGridExport = toKWh(detail.gridSellTodayEnergy, detail.gridSellTodayEnergyStr)
+  const mConsumption = toKWh(detail.homeLoadTodayEnergy, detail.homeLoadTodayEnergyStr)
+  const mBattCharge = toKWh(detail.batteryTodayChargeEnergy, detail.batteryTodayChargeEnergyStr)
+  const mBattDischarge = toKWh(detail.batteryTodayDischargeEnergy, detail.batteryTodayDischargeEnergyStr)
+  const mProduction = toKWh(detail.eToday, detail.eTodayStr)
   const feedInRate = getExportPrice()
 
-  // Per-tariff-group accumulators
-  const groupAccum = new Map<string, { gridImport: number; consumption: number; cost: number }>()
-  for (const g of tariffGroups) {
-    groupAccum.set(g.id, { gridImport: 0, consumption: 0, cost: 0 })
-  }
+  // ── Use 5-min data ONLY for proportional distribution ──
+  // We accumulate raw (unnormalised-total) shares to find what fraction
+  // of each metric falls in each tariff period / peak vs off-peak bucket.
+  let rawGridImport = 0, rawGridExport = 0, rawBattCharge = 0, rawBattDischarge = 0
+  let rawSolar = 0, rawLoad = 0
+  let rawOffPeakGridImport = 0, rawPeakGridImport = 0
+  let rawOffPeakBattCharge = 0, rawPeakBattDischarge = 0
+  let rawPeakSolar = 0
+  let rawOffPeakLoad = 0, rawPeakLoad = 0
+  let offPeakPoints = 0, peakPoints = 0
+
+  // Per-tariff-group raw proportions
+  const groupRaw = new Map<string, { gridImport: number; load: number }>()
+  for (const g of tariffGroups) groupRaw.set(g.id, { gridImport: 0, load: 0 })
+
+  // Per-tariff-group weighted rate for battery charge / discharge
+  let rawBattChargeWeighted = 0, rawBattDischargeWeighted = 0
 
   const sorted = [...dayData].sort(
     (a, b) => Number(a.dataTimestamp) - Number(b.dataTimestamp)
@@ -114,7 +117,6 @@ function analyzeLoadShifting(
   for (let i = 0; i < sorted.length; i++) {
     const entry = sorted[i]
     let ts = Number(entry.dataTimestamp)
-    // Normalise timestamp: if it looks like seconds (< 1e12), convert to ms
     if (ts > 0 && ts < 1e12) ts = ts * 1000
     const date = new Date(ts)
     const hour = date.getHours()
@@ -128,8 +130,6 @@ function analyzeLoadShifting(
       if (diff > 0 && diff < 1) intervalHours = diff
     }
 
-    // Normalise all power readings to kW
-    // Use pacPec as shared fallback since Solis day entries use the same scale for all fields
     const raw = entry as Record<string, unknown>
     const sharedPec = entry.pacPec
     const gridPec = (raw.psumPec ?? raw.psumCalPec ?? raw.pSumPec ?? sharedPec) as string | undefined
@@ -137,78 +137,93 @@ function analyzeLoadShifting(
     const battPower = toKW(entry.batteryPower, entry.batteryPowerStr, (entry.batteryPowerPec ?? sharedPec) as string | undefined)
     const solarPower = toKW(entry.pac, entry.pacStr, entry.pacPec)
     const loadPower = toKW(entry.familyLoadPower, entry.familyLoadPowerStr, (entry.familyLoadPowerPec ?? sharedPec) as string | undefined)
-
-    // Accumulate per-tariff-group
     const rate = getRateForHour(hour, tariffGroups)
+
+    const gi = gridPower > 0 ? gridPower * intervalHours : 0
+    const ge = gridPower < 0 ? Math.abs(gridPower) * intervalHours : 0
+    const bc = battPower > 0 ? battPower * intervalHours : 0
+    const bd = battPower < 0 ? Math.abs(battPower) * intervalHours : 0
+    const sl = solarPower > 0 ? solarPower * intervalHours : 0
+    const ld = loadPower > 0 ? loadPower * intervalHours : 0
+
+    rawGridImport += gi; rawGridExport += ge
+    rawBattCharge += bc; rawBattDischarge += bd
+    rawSolar += sl; rawLoad += ld
+
+    // Weighted rate for battery economics
+    rawBattChargeWeighted += bc * rate
+    rawBattDischargeWeighted += bd * rate
+
+    // Per-tariff-group
     const matchedGroup = tariffGroups.find((g) => {
       if (g.startHour > g.endHour) return hour >= g.startHour || hour < g.endHour
       return hour >= g.startHour && hour < g.endHour
     })
     if (matchedGroup) {
-      const acc = groupAccum.get(matchedGroup.id)!
-      const imported = gridPower > 0 ? gridPower * intervalHours : 0
-      acc.gridImport += imported
-      acc.consumption += loadPower * intervalHours
-      acc.cost += imported * rate // rate is in currency/kWh as entered by user
-    }
-
-    // Battery economics: track cost of charging and value of discharging at current rate
-    if (battPower > 0) {
-      // Charging – cost is the rate we're paying at this hour
-      const chargeEnergy = battPower * intervalHours
-      batteryChargeCost += chargeEnergy * rate
-      totalBatteryChargeEnergy += chargeEnergy
-    } else if (battPower < 0) {
-      // Discharging – value is the grid rate we're avoiding at this hour
-      const dischargeEnergy = Math.abs(battPower) * intervalHours
-      batteryDischargeValue += dischargeEnergy * rate
-      totalBatteryDischargeEnergy += dischargeEnergy
-    }
-
-    // Track total load for "without solar" cost
-    totalLoadEnergy += loadPower * intervalHours
-
-    // Track grid export revenue (negative pSum = exporting) using the export/feed-in tariff
-    if (gridPower < 0 && feedInRate > 0) {
-      gridExportRevenue += Math.abs(gridPower) * intervalHours * feedInRate
+      const acc = groupRaw.get(matchedGroup.id)!
+      acc.gridImport += gi
+      acc.load += ld
     }
 
     if (offPeak) {
       offPeakPoints++
-      if (gridPower > 0) {
-        offPeakGridImport += gridPower * intervalHours
-        offPeakGridCost += gridPower * intervalHours * rate
-      }
-      if (battPower > 0) offPeakBatteryCharge += battPower * intervalHours
-      offPeakConsumption += loadPower * intervalHours
+      rawOffPeakGridImport += gi
+      rawOffPeakBattCharge += bc
+      rawOffPeakLoad += ld
     } else {
       peakPoints++
-      if (gridPower > 0) {
-        peakGridImport += gridPower * intervalHours
-        peakGridCost += gridPower * intervalHours * rate
-      }
-      if (battPower < 0) peakBatteryDischarge += Math.abs(battPower) * intervalHours
-      if (solarPower > 0) peakSolarDirect += solarPower * intervalHours
-      peakConsumption += loadPower * intervalHours
+      rawPeakGridImport += gi
+      rawPeakBattDischarge += bd
+      rawPeakSolar += sl
+      rawPeakLoad += ld
     }
   }
 
-  const totalConsumption = offPeakConsumption + peakConsumption
+  // ── Scale raw proportions to metered totals ──
+  const scaleGrid = rawGridImport > 0 ? mGridImport / rawGridImport : 0
+  const scaleLoad = rawLoad > 0 ? mConsumption / rawLoad : 0
+  const scaleBattC = rawBattCharge > 0 ? mBattCharge / rawBattCharge : 0
+  const scaleBattD = rawBattDischarge > 0 ? mBattDischarge / rawBattDischarge : 0
+  const scaleSolar = rawSolar > 0 ? mProduction / rawSolar : 0
+
+  const offPeakGridImport = rawOffPeakGridImport * scaleGrid
+  const peakGridImport = rawPeakGridImport * scaleGrid
+  const offPeakBatteryCharge = rawOffPeakBattCharge * scaleBattC
+  const peakBatteryDischarge = rawPeakBattDischarge * scaleBattD
+  const peakSolarDirect = rawPeakSolar * scaleSolar
+  const offPeakConsumption = rawOffPeakLoad * scaleLoad
+  const peakConsumption = rawPeakLoad * scaleLoad
+  const totalConsumption = mConsumption
+
   const loadShiftedEnergy = Math.min(offPeakBatteryCharge, peakBatteryDischarge)
   const loadShiftEfficiency =
     peakConsumption > 0
       ? Math.min(100, ((peakBatteryDischarge + peakSolarDirect) / peakConsumption) * 100)
       : 0
 
+  // ── Cost calculations using scaled values and TOU rates ──
   const hasRates = tariffGroups.some((g) => g.rate > 0)
+
   const tariffBreakdown: TariffBreakdown[] = tariffGroups
     .map((g) => {
-      const acc = groupAccum.get(g.id)!
-      return { group: g, ...acc }
+      const raw = groupRaw.get(g.id)!
+      const gi = raw.gridImport * scaleGrid
+      const cons = raw.load * scaleLoad
+      const cost = gi * g.rate
+      return { group: g, gridImport: gi, consumption: cons, cost }
     })
     .filter((b) => b.gridImport > 0.001 || b.consumption > 0.001)
 
   const totalGridCost = tariffBreakdown.reduce((sum, b) => sum + b.cost, 0)
+  const offPeakGridCost = offPeakGridImport * (tariffGroups.find(g => isOffPeakHour(g.startHour, settings))?.rate ?? 0)
+  const peakGridCost = totalGridCost - offPeakGridCost
+
+  // Export revenue using metered export total
+  const gridExportRevenue = mGridExport * feedInRate
+
+  // Battery economics: scale the weighted-rate accumulators
+  const batteryChargeCost = rawBattCharge > 0 ? (rawBattChargeWeighted / rawBattCharge) * mBattCharge : 0
+  const batteryDischargeValue = rawBattDischarge > 0 ? (rawBattDischargeWeighted / rawBattDischarge) * mBattDischarge : 0
 
   // Savings: energy shifted * (highest rate - lowest rate)
   const rates = tariffGroups.filter((g) => g.rate > 0).map((g) => g.rate)
@@ -216,7 +231,7 @@ function analyzeLoadShifting(
   const minRate = rates.length > 0 ? Math.min(...rates) : 0
   const shiftedSavings = hasRates ? loadShiftedEnergy * (maxRate - minRate) : 0
 
-  // What it would cost if ALL consumption came from grid at hour-weighted avg rate
+  // Hour-weighted avg rate for "without solar" estimate
   let _totalH = 0, _weightedS = 0
   for (const g of tariffGroups) {
     if (g.rate <= 0) continue
@@ -226,7 +241,10 @@ function analyzeLoadShifting(
     if (h > 0) { _weightedS += g.rate * h; _totalH += h }
   }
   const avgRate = _totalH > 0 ? _weightedS / _totalH : (rates.length > 0 ? rates.reduce((a, b) => a + b, 0) / rates.length : 0)
-  const costWithoutSolar = totalLoadEnergy * avgRate
+
+  // "Without solar" = what it would cost if all consumption came from grid
+  // Use TOU-weighted consumption cost from tariff breakdown
+  const costWithoutSolar = tariffBreakdown.reduce((sum, b) => sum + b.consumption * b.group.rate, 0) || mConsumption * avgRate
   const netCost = totalGridCost - gridExportRevenue
 
   return {
@@ -255,8 +273,8 @@ function analyzeLoadShifting(
     batteryChargeCost,
     batteryDischargeValue,
     batteryNetBenefit: batteryDischargeValue - batteryChargeCost,
-    batteryChargeAvgRate: totalBatteryChargeEnergy > 0 ? batteryChargeCost / totalBatteryChargeEnergy : 0,
-    batteryDischargeAvgRate: totalBatteryDischargeEnergy > 0 ? batteryDischargeValue / totalBatteryDischargeEnergy : 0,
+    batteryChargeAvgRate: mBattCharge > 0 ? batteryChargeCost / mBattCharge : 0,
+    batteryDischargeAvgRate: mBattDischarge > 0 ? batteryDischargeValue / mBattDischarge : 0,
   }
 }
 
@@ -393,8 +411,8 @@ export function LoadShiftingCard({ detail, dayData, monthData, yearData }: LoadS
   const analysis = useMemo(() => {
     const settings = getOffPeakSettings()
     const groups = getTariffGroups()
-    return analyzeLoadShifting(dayData, settings, groups)
-  }, [dayData])
+    return analyzeLoadShifting(dayData, settings, groups, detail)
+  }, [dayData, detail])
 
   const tariffGroups = useMemo(() => getTariffGroups(), [])
   const avgRate = useMemo(() => {
