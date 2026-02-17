@@ -10,7 +10,6 @@ import {
   TrendingUp,
   Info,
   Coins,
-  Zap,
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -428,206 +427,128 @@ export function LoadShiftingCard({ detail, dayData, monthData, yearData }: LoadS
           </div>
         ) : period === "day" ? (
           <>
-            {/* Load shift efficiency gauge */}
-            <div className="flex flex-col items-center gap-2 rounded-lg border bg-muted/30 p-5">
-              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                Peak Self-Sufficiency
-              </p>
-              <p className="text-4xl font-bold tabular-nums text-card-foreground">
-                {analysis.loadShiftEfficiency.toFixed(0)}%
-              </p>
-              <div className="h-3 w-full max-w-xs rounded-full bg-muted">
-                <div
-                  className="h-3 rounded-full transition-all"
-                  style={{
-                    width: `${Math.min(100, analysis.loadShiftEfficiency)}%`,
-                    background:
-                      analysis.loadShiftEfficiency >= 80
-                        ? "hsl(var(--chart-4))"
-                        : analysis.loadShiftEfficiency >= 50
-                          ? "hsl(var(--chart-2))"
-                          : "hsl(var(--chart-5))",
-                  }}
-                />
+            {/* Self-sufficiency + key stats */}
+            <div className="flex items-center gap-4 rounded-lg border bg-muted/30 px-5 py-4">
+              <div className="flex flex-col items-center gap-1">
+                <p className="text-3xl font-bold tabular-nums text-card-foreground">
+                  {analysis.loadShiftEfficiency.toFixed(0)}%
+                </p>
+                <div className="h-2 w-16 rounded-full bg-muted">
+                  <div
+                    className="h-2 rounded-full transition-all"
+                    style={{
+                      width: `${Math.min(100, analysis.loadShiftEfficiency)}%`,
+                      background:
+                        analysis.loadShiftEfficiency >= 80
+                          ? "hsl(var(--chart-4))"
+                          : analysis.loadShiftEfficiency >= 50
+                            ? "hsl(var(--chart-2))"
+                            : "hsl(var(--chart-5))",
+                    }}
+                  />
+                </div>
+                <p className="text-[10px] text-muted-foreground">self-sufficient</p>
               </div>
-              <p className="text-xs text-muted-foreground">
-                of peak-hour consumption met by solar + battery (not grid)
-              </p>
+              <div className="h-10 w-px bg-border" />
+              <div className="grid flex-1 grid-cols-3 gap-3 text-center text-sm">
+                <div>
+                  <p className="text-lg font-bold tabular-nums text-card-foreground">{analysis.totalConsumption.toFixed(1)}</p>
+                  <p className="text-[10px] text-muted-foreground">kWh consumed</p>
+                </div>
+                <div>
+                  <p className="text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{analysis.loadShiftedEnergy.toFixed(1)}</p>
+                  <p className="text-[10px] text-muted-foreground">kWh shifted</p>
+                </div>
+                <div>
+                  <p className="text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{(analysis.peakBatteryDischarge + analysis.peakSolarDirect).toFixed(1)}</p>
+                  <p className="text-[10px] text-muted-foreground">kWh peak avoided</p>
+                </div>
+              </div>
             </div>
 
-            {/* Off-peak vs Peak breakdown */}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              {/* Off-peak column */}
-              <div className="rounded-lg border p-4">
-                <div className="mb-3 flex items-center gap-2">
-                  <Moon className="h-4 w-4 text-indigo-400" />
-                  <h3 className="text-sm font-semibold text-card-foreground">
-                    Off-Peak
-                  </h3>
-                </div>
-                <div className="space-y-2.5">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="flex items-center gap-1.5 text-muted-foreground">
-                      <ArrowDownToLine className="h-3.5 w-3.5" />
-                      Grid Import
-                    </span>
-                    <span className="font-medium tabular-nums text-card-foreground">
-                      {analysis.offPeakGridImport.toFixed(2)} kWh
-                    </span>
-                  </div>
+            {/* Combined energy breakdown table */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/50">
+                    <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Metric</th>
+                    <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">
+                      <span className="inline-flex items-center gap-1"><Moon className="h-3 w-3 text-indigo-400" /> Off-Peak</span>
+                    </th>
+                    <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">
+                      <span className="inline-flex items-center gap-1"><Sun className="h-3 w-3 text-amber-500" /> Peak</span>
+                    </th>
+                    <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">Total</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  <tr>
+                    <td className="flex items-center gap-1.5 px-3 py-2 font-medium text-card-foreground"><ArrowDownToLine className="h-3.5 w-3.5 text-red-500" /> Grid Import</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-card-foreground">{analysis.offPeakGridImport.toFixed(2)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-red-500">{analysis.peakGridImport.toFixed(2)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums font-medium text-card-foreground">{(analysis.offPeakGridImport + analysis.peakGridImport).toFixed(2)} kWh</td>
+                  </tr>
+                  <tr>
+                    <td className="flex items-center gap-1.5 px-3 py-2 font-medium text-card-foreground"><Sun className="h-3.5 w-3.5 text-primary" /> Solar Direct</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">--</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-emerald-600 dark:text-emerald-400">{analysis.peakSolarDirect.toFixed(2)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums font-medium text-emerald-600 dark:text-emerald-400">{analysis.peakSolarDirect.toFixed(2)} kWh</td>
+                  </tr>
                   {hasBattery && (
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="flex items-center gap-1.5 text-muted-foreground">
-                        <Battery className="h-3.5 w-3.5" />
-                        Battery Charged
-                      </span>
-                      <span className="font-medium tabular-nums text-card-foreground">
-                        {analysis.offPeakBatteryCharge.toFixed(2)} kWh
-                      </span>
-                    </div>
+                  <>
+                  <tr>
+                    <td className="flex items-center gap-1.5 px-3 py-2 font-medium text-card-foreground"><BatteryCharging className="h-3.5 w-3.5 text-primary" /> Batt Charge</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-card-foreground">{analysis.offPeakBatteryCharge.toFixed(2)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">--</td>
+                    <td className="px-3 py-2 text-right tabular-nums font-medium text-card-foreground">{analysis.offPeakBatteryCharge.toFixed(2)} kWh</td>
+                  </tr>
+                  <tr>
+                    <td className="flex items-center gap-1.5 px-3 py-2 font-medium text-card-foreground"><Battery className="h-3.5 w-3.5 text-primary" /> Batt Discharge</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">--</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-emerald-600 dark:text-emerald-400">{analysis.peakBatteryDischarge.toFixed(2)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums font-medium text-emerald-600 dark:text-emerald-400">{analysis.peakBatteryDischarge.toFixed(2)} kWh</td>
+                  </tr>
+                  </>
                   )}
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="flex items-center gap-1.5 text-muted-foreground">
-                      Consumption
-                    </span>
-                    <span className="font-medium tabular-nums text-card-foreground">
-                      {analysis.offPeakConsumption.toFixed(2)} kWh
-                    </span>
-                  </div>
+                  <tr>
+                    <td className="px-3 py-2 font-medium text-card-foreground">Consumption</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-card-foreground">{analysis.offPeakConsumption.toFixed(2)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-card-foreground">{analysis.peakConsumption.toFixed(2)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums font-medium text-card-foreground">{analysis.totalConsumption.toFixed(2)} kWh</td>
+                  </tr>
                   {analysis.hasRates && (
-                    <div className="flex items-center justify-between border-t pt-2 text-sm">
-                      <span className="flex items-center gap-1.5 text-muted-foreground">
-                        <Coins className="h-3.5 w-3.5" />
-                        Grid Cost
-                      </span>
-                      <span className="font-medium tabular-nums text-card-foreground">
-                        {currency.symbol}{analysis.offPeakGridCost.toFixed(2)}
-                      </span>
-                    </div>
+                  <tr className="bg-muted/30">
+                    <td className="flex items-center gap-1.5 px-3 py-2 font-medium text-card-foreground"><Coins className="h-3.5 w-3.5" /> Grid Cost</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-card-foreground">{currency.symbol}{analysis.offPeakGridCost.toFixed(2)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-red-500">{currency.symbol}{analysis.peakGridCost.toFixed(2)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums font-medium text-card-foreground">{currency.symbol}{analysis.totalGridCost.toFixed(2)}</td>
+                  </tr>
                   )}
-                </div>
-              </div>
-
-              {/* Peak column */}
-              <div className="rounded-lg border p-4">
-                <div className="mb-3 flex items-center gap-2">
-                  <Sun className="h-4 w-4 text-amber-500" />
-                  <h3 className="text-sm font-semibold text-card-foreground">
-                    Peak
-                  </h3>
-                </div>
-                <div className="space-y-2.5">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="flex items-center gap-1.5 text-muted-foreground">
-                      <Sun className="h-3.5 w-3.5" />
-                      Solar Direct Use
-                    </span>
-                    <span className="font-medium tabular-nums text-emerald-600 dark:text-emerald-400">
-                      {analysis.peakSolarDirect.toFixed(2)} kWh
-                    </span>
-                  </div>
-                  {hasBattery && (
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="flex items-center gap-1.5 text-muted-foreground">
-                        <Battery className="h-3.5 w-3.5" />
-                        Battery Discharged
-                      </span>
-                      <span className="font-medium tabular-nums text-emerald-600 dark:text-emerald-400">
-                        {analysis.peakBatteryDischarge.toFixed(2)} kWh
-                      </span>
-                    </div>
-                  )}
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="flex items-center gap-1.5 text-muted-foreground">
-                      <ArrowDownToLine className="h-3.5 w-3.5" />
-                      Grid Import
-                    </span>
-                    <span className="font-medium tabular-nums text-red-500">
-                      {analysis.peakGridImport.toFixed(2)} kWh
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="flex items-center gap-1.5 text-muted-foreground">
-                      Consumption
-                    </span>
-                    <span className="font-medium tabular-nums text-card-foreground">
-                      {analysis.peakConsumption.toFixed(2)} kWh
-                    </span>
-                  </div>
-                  {analysis.hasRates && (
-                    <div className="flex items-center justify-between border-t pt-2 text-sm">
-                      <span className="flex items-center gap-1.5 text-muted-foreground">
-                        <Coins className="h-3.5 w-3.5" />
-                        Grid Cost
-                      </span>
-                      <span className="font-medium tabular-nums text-red-500">
-                        {currency.symbol}{analysis.peakGridCost.toFixed(2)}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
+                </tbody>
+              </table>
             </div>
 
-            {/* Summary row */}
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <div className="rounded-lg border p-3 text-center">
-                <p className="text-xs text-muted-foreground">Energy Shifted</p>
-                <p className="mt-1 text-lg font-bold tabular-nums text-card-foreground">
-                  {analysis.loadShiftedEnergy.toFixed(2)}
-                </p>
-                <p className="text-xs text-muted-foreground">kWh</p>
-              </div>
-              <div className="rounded-lg border p-3 text-center">
-                <p className="text-xs text-muted-foreground">Total Consumption</p>
-                <p className="mt-1 text-lg font-bold tabular-nums text-card-foreground">
-                  {analysis.totalConsumption.toFixed(2)}
-                </p>
-                <p className="text-xs text-muted-foreground">kWh</p>
-              </div>
-              <div className="rounded-lg border p-3 text-center">
-                <p className="text-xs text-muted-foreground">Peak Grid Avoided</p>
-                <p className="mt-1 text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
-                  {(analysis.peakBatteryDischarge + analysis.peakSolarDirect).toFixed(2)}
-                </p>
-                <p className="text-xs text-muted-foreground">kWh</p>
-              </div>
-              {savingsEstimate !== null ? (
-                <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3 text-center">
-                  <p className="text-xs text-muted-foreground">Shift Savings</p>
-                  <p className="mt-1 text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
-                    {currency.symbol}{savingsEstimate.toFixed(2)}
-                  </p>
-                  <p className="text-xs text-muted-foreground">today</p>
-                </div>
-              ) : (
-                <div className="rounded-lg border p-3 text-center">
-                  <p className="text-xs text-muted-foreground">Data Points</p>
-                  <p className="mt-1 text-lg font-bold tabular-nums text-card-foreground">
-                    {analysis.offPeakPoints + analysis.peakPoints}
-                  </p>
-                  <p className="text-xs text-muted-foreground">readings</p>
-                </div>
-              )}
-            </div>
-
-            {/* Monetary summary */}
+            {/* Financial summary */}
             {analysis.hasRates && (
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <div className="rounded-lg border p-3 text-center">
-                  <p className="text-xs text-muted-foreground">Total Grid Cost</p>
-                  <p className="mt-1 text-lg font-bold tabular-nums text-card-foreground">
-                    {currency.symbol}{analysis.totalGridCost.toFixed(2)}
-                  </p>
-                  <p className="text-xs text-muted-foreground">import cost</p>
-                </div>
+                {hasBattery && (analysis.batteryChargeCost > 0.001 || analysis.batteryDischargeValue > 0.001) && (
+                  <div className={`rounded-lg p-3 text-center ${analysis.batteryNetBenefit >= 0 ? "border border-emerald-500/30 bg-emerald-500/5" : "border border-red-500/30 bg-red-500/5"}`}>
+                    <p className="text-xs text-muted-foreground">Battery Arbitrage</p>
+                    <p className={`mt-1 text-lg font-bold tabular-nums ${analysis.batteryNetBenefit >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-500"}`}>
+                      {analysis.batteryNetBenefit >= 0 ? "+" : ""}{currency.symbol}{analysis.batteryNetBenefit.toFixed(2)}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground">
+                      {currency.symbol}{analysis.batteryChargeCost.toFixed(2)} in &rarr; {currency.symbol}{analysis.batteryDischargeValue.toFixed(2)} out
+                    </p>
+                  </div>
+                )}
                 {analysis.gridExportRevenue > 0.01 && (
                   <div className="rounded-lg border p-3 text-center">
                     <p className="text-xs text-muted-foreground">Export Revenue</p>
                     <p className="mt-1 text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
                       {currency.symbol}{analysis.gridExportRevenue.toFixed(2)}
                     </p>
-                    <p className="text-xs text-muted-foreground">feed-in</p>
+                    <p className="text-[10px] text-muted-foreground">feed-in</p>
                   </div>
                 )}
                 <div className="rounded-lg border p-3 text-center">
@@ -635,7 +556,7 @@ export function LoadShiftingCard({ detail, dayData, monthData, yearData }: LoadS
                   <p className="mt-1 text-lg font-bold tabular-nums text-card-foreground">
                     {currency.symbol}{analysis.netCost.toFixed(2)}
                   </p>
-                  <p className="text-xs text-muted-foreground">after export</p>
+                  <p className="text-[10px] text-muted-foreground">after export</p>
                 </div>
                 {analysis.costWithoutSolar > 0.01 && (
                   <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3 text-center">
@@ -643,57 +564,8 @@ export function LoadShiftingCard({ detail, dayData, monthData, yearData }: LoadS
                     <p className="mt-1 text-lg font-bold tabular-nums text-muted-foreground line-through">
                       {currency.symbol}{analysis.costWithoutSolar.toFixed(2)}
                     </p>
-                    <p className="text-xs text-emerald-600 dark:text-emerald-400">
+                    <p className="text-[10px] text-emerald-600 dark:text-emerald-400">
                       saving {currency.symbol}{(analysis.costWithoutSolar - analysis.netCost).toFixed(2)}
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Battery Economics */}
-            {hasBattery && analysis.hasRates && (analysis.batteryChargeCost > 0.001 || analysis.batteryDischargeValue > 0.001) && (
-              <div className="rounded-lg border p-4">
-                <div className="mb-3 flex items-center gap-2">
-                  <BatteryCharging className="h-4 w-4 text-primary" />
-                  <h3 className="text-sm font-semibold text-card-foreground">Battery Economics (Today)</h3>
-                </div>
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="rounded-lg bg-muted/40 p-3 text-center">
-                    <p className="text-xs text-muted-foreground">Charge Cost</p>
-                    <p className="mt-1 text-lg font-bold tabular-nums text-card-foreground">
-                      {currency.symbol}{analysis.batteryChargeCost.toFixed(2)}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {analysis.offPeakBatteryCharge.toFixed(1)} kWh @ avg {currency.symbol}{analysis.batteryChargeAvgRate.toFixed(2)}/kWh
-                    </p>
-                  </div>
-                  <div className="rounded-lg bg-muted/40 p-3 text-center">
-                    <p className="text-xs text-muted-foreground">Discharge Value</p>
-                    <p className="mt-1 text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
-                      {currency.symbol}{analysis.batteryDischargeValue.toFixed(2)}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {analysis.peakBatteryDischarge.toFixed(1)} kWh @ avg {currency.symbol}{analysis.batteryDischargeAvgRate.toFixed(2)}/kWh
-                    </p>
-                  </div>
-                  <div className={`rounded-lg p-3 text-center ${analysis.batteryNetBenefit >= 0 ? "bg-emerald-500/10 border border-emerald-500/30" : "bg-red-500/10 border border-red-500/30"}`}>
-                    <p className="text-xs text-muted-foreground">Net Benefit</p>
-                    <p className={`mt-1 text-lg font-bold tabular-nums ${analysis.batteryNetBenefit >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-500"}`}>
-                      {analysis.batteryNetBenefit >= 0 ? "+" : ""}{currency.symbol}{analysis.batteryNetBenefit.toFixed(2)}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {analysis.batteryNetBenefit >= 0 ? "saved vs grid" : "rate arbitrage loss"}
-                    </p>
-                  </div>
-                </div>
-                {analysis.batteryNetBenefit > 0.01 && (
-                  <div className="mt-3 flex items-center gap-2 rounded bg-emerald-500/5 px-3 py-2">
-                    <Zap className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
-                    <p className="text-xs text-muted-foreground">
-                      Battery arbitrage is profitable: charging at avg <strong className="text-card-foreground">{currency.symbol}{analysis.batteryChargeAvgRate.toFixed(2)}/kWh</strong> and
-                      displacing grid at avg <strong className="text-card-foreground">{currency.symbol}{analysis.batteryDischargeAvgRate.toFixed(2)}/kWh</strong> saves{" "}
-                      <strong className="text-emerald-600 dark:text-emerald-400">{currency.symbol}{analysis.batteryNetBenefit.toFixed(2)}</strong> today.
                     </p>
                   </div>
                 )}
@@ -774,188 +646,93 @@ export function LoadShiftingCard({ detail, dayData, monthData, yearData }: LoadS
         ) : (
           /* Week / Month / Year / Lifetime summary view */
           <>
-            {/* Energy overview grid */}
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              {(() => { const f = fmtE(currentSummary.production); return (
-              <div className="rounded-lg border p-3 text-center">
-                <p className="text-xs text-muted-foreground">Production</p>
-                <p className="mt-1 text-lg font-bold tabular-nums text-card-foreground">{f.text}</p>
-                <p className="text-xs text-muted-foreground">{f.unit}</p>
-              </div>
-              )})()}
-              {(() => { const f = fmtE(currentSummary.consumption); return (
-              <div className="rounded-lg border p-3 text-center">
-                <p className="text-xs text-muted-foreground">Consumption</p>
-                <p className="mt-1 text-lg font-bold tabular-nums text-card-foreground">{f.text}</p>
-                <p className="text-xs text-muted-foreground">{f.unit}</p>
-              </div>
-              )})()}
-              {(() => { const f = fmtE(Math.max(0, currentSummary.production - currentSummary.gridExport)); return (
-              <div className="rounded-lg border p-3 text-center">
-                <p className="text-xs text-muted-foreground">Self-Consumed</p>
-                <p className="mt-1 text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{f.text}</p>
-                <p className="text-xs text-muted-foreground">{f.unit}</p>
-              </div>
-              )})()}
-            </div>
-
-            {/* Grid exchange */}
-            <div className="grid grid-cols-2 gap-3">
-              {(() => { const f = fmtE(currentSummary.gridImport); return (
-              <div className="rounded-lg border p-3 text-center">
-                <p className="text-xs text-muted-foreground">Grid Import</p>
-                <p className="mt-1 text-lg font-bold tabular-nums text-red-500">{f.text}</p>
-                <p className="text-xs text-muted-foreground">{f.unit}</p>
-              </div>
-              )})()}
-              {(() => { const f = fmtE(currentSummary.gridExport); return (
-              <div className="rounded-lg border p-3 text-center">
-                <p className="text-xs text-muted-foreground">Grid Export</p>
-                <p className="mt-1 text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{f.text}</p>
-                <p className="text-xs text-muted-foreground">{f.unit}</p>
-              </div>
-              )})()}
-            </div>
-
-            {/* Battery */}
-            {(currentSummary.batteryCharge > 0 || currentSummary.batteryDischarge > 0) && (
-              <div className="grid grid-cols-2 gap-3">
-                {(() => { const f = fmtE(currentSummary.batteryCharge); return (
-                <div className="rounded-lg border p-3 text-center">
-                  <p className="text-xs text-muted-foreground">Battery Charge</p>
-                  <p className="mt-1 text-lg font-bold tabular-nums text-card-foreground">{f.text}</p>
-                  <p className="text-xs text-muted-foreground">{f.unit}</p>
-                </div>
-                )})()}
-                {(() => { const f = fmtE(currentSummary.batteryDischarge); return (
-                <div className="rounded-lg border p-3 text-center">
-                  <p className="text-xs text-muted-foreground">Battery Discharge</p>
-                  <p className="mt-1 text-lg font-bold tabular-nums text-card-foreground">{f.text}</p>
-                  <p className="text-xs text-muted-foreground">{f.unit}</p>
-                </div>
-                )})()}
-              </div>
-            )}
-
-            {/* Battery Economics (period) */}
-            {(currentSummary.batteryCharge > 0 || currentSummary.batteryDischarge > 0) && avgRate > 0 && (() => {
-              // For non-day periods we estimate using the lowest and highest tariff rates
-              const rates = tariffGroups.filter((g) => g.rate > 0).map((g) => g.rate)
-              const minRate = rates.length > 0 ? Math.min(...rates) : avgRate
-              const maxRate = rates.length > 0 ? Math.max(...rates) : avgRate
-              const estChargeCost = currentSummary.batteryCharge * minRate
-              const estDischargeValue = currentSummary.batteryDischarge * maxRate
-              const estBenefit = estDischargeValue - estChargeCost
+            {/* Energy summary table */}
+            {(() => {
+              const selfConsumed = Math.max(0, currentSummary.production - currentSummary.gridExport)
+              const rows: { label: string; value: number; color?: string }[] = [
+                { label: "Production", value: currentSummary.production },
+                { label: "Consumption", value: currentSummary.consumption },
+                { label: "Self-Consumed", value: selfConsumed, color: "text-emerald-600 dark:text-emerald-400" },
+                { label: "Grid Import", value: currentSummary.gridImport, color: "text-red-500" },
+                { label: "Grid Export", value: currentSummary.gridExport, color: "text-emerald-600 dark:text-emerald-400" },
+              ]
+              if (currentSummary.batteryCharge > 0 || currentSummary.batteryDischarge > 0) {
+                rows.push({ label: "Batt Charge", value: currentSummary.batteryCharge })
+                rows.push({ label: "Batt Discharge", value: currentSummary.batteryDischarge, color: "text-emerald-600 dark:text-emerald-400" })
+              }
               return (
-              <div className="rounded-lg border p-4">
-                <div className="mb-3 flex items-center gap-2">
-                  <BatteryCharging className="h-4 w-4 text-primary" />
-                  <h3 className="text-sm font-semibold text-card-foreground">Battery Economics (est.)</h3>
-                </div>
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="rounded-lg bg-muted/40 p-3 text-center">
-                    <p className="text-xs text-muted-foreground">Charge Cost</p>
-                    <p className="mt-1 text-lg font-bold tabular-nums text-card-foreground">
-                      {currency.symbol}{estChargeCost.toFixed(2)}
-                    </p>
-                    {(() => { const f = fmtE(currentSummary.batteryCharge); return (
-                    <p className="text-xs text-muted-foreground">
-                      {f.text} {f.unit} @ {currency.symbol}{minRate.toFixed(2)}
-                    </p>
-                    )})()}
-                  </div>
-                  <div className="rounded-lg bg-muted/40 p-3 text-center">
-                    <p className="text-xs text-muted-foreground">Discharge Value</p>
-                    <p className="mt-1 text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
-                      {currency.symbol}{estDischargeValue.toFixed(2)}
-                    </p>
-                    {(() => { const f = fmtE(currentSummary.batteryDischarge); return (
-                    <p className="text-xs text-muted-foreground">
-                      {f.text} {f.unit} @ {currency.symbol}{maxRate.toFixed(2)}
-                    </p>
-                    )})()}
-                  </div>
-                  <div className={`rounded-lg p-3 text-center ${estBenefit >= 0 ? "bg-emerald-500/10 border border-emerald-500/30" : "bg-red-500/10 border border-red-500/30"}`}>
-                    <p className="text-xs text-muted-foreground">Net Benefit</p>
-                    <p className={`mt-1 text-lg font-bold tabular-nums ${estBenefit >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-500"}`}>
-                      {estBenefit >= 0 ? "+" : ""}{currency.symbol}{estBenefit.toFixed(2)}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {estBenefit >= 0 ? "saved vs grid" : "rate gap loss"}
-                    </p>
-                  </div>
-                </div>
-                <p className="mt-2 text-xs text-muted-foreground italic">
-                  Estimated using cheapest rate ({currency.symbol}{minRate.toFixed(2)}) for charging, peak rate ({currency.symbol}{maxRate.toFixed(2)}) for discharge value.
-                </p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <tbody className="divide-y">
+                    {rows.map((r) => { const f = fmtE(r.value); return (
+                      <tr key={r.label}>
+                        <td className="px-3 py-1.5 text-muted-foreground">{r.label}</td>
+                        <td className={`px-3 py-1.5 text-right tabular-nums font-medium ${r.color || "text-card-foreground"}`}>{f.text} <span className="text-muted-foreground font-normal">{f.unit}</span></td>
+                      </tr>
+                    )})}
+                  </tbody>
+                </table>
               </div>
               )
             })()}
 
-            {/* Cost summary */}
-            {avgRate > 0 && (
+            {/* Financial summary with battery */}
+            {avgRate > 0 && (() => {
+              const rates = tariffGroups.filter((g) => g.rate > 0).map((g) => g.rate)
+              const minRate = rates.length > 0 ? Math.min(...rates) : avgRate
+              const maxRate = rates.length > 0 ? Math.max(...rates) : avgRate
+              const hasBatt = currentSummary.batteryCharge > 0 || currentSummary.batteryDischarge > 0
+              const estBenefit = hasBatt ? currentSummary.batteryDischarge * maxRate - currentSummary.batteryCharge * minRate : 0
+              const withoutSolar = currentSummary.consumption * avgRate
+              return (
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <div className="rounded-lg border p-3 text-center">
                   <p className="text-xs text-muted-foreground">Import Cost</p>
-                  <p className="mt-1 text-lg font-bold tabular-nums text-card-foreground">
-                    {currency.symbol}{currentSummary.gridImportCost.toFixed(2)}
-                  </p>
-                  <p className="text-xs text-muted-foreground">grid purchases</p>
+                  <p className="mt-1 text-lg font-bold tabular-nums text-card-foreground">{currency.symbol}{currentSummary.gridImportCost.toFixed(2)}</p>
                 </div>
                 {currentSummary.gridExportRevenue > 0.01 && (
                   <div className="rounded-lg border p-3 text-center">
                     <p className="text-xs text-muted-foreground">Export Revenue</p>
-                    <p className="mt-1 text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
-                      {currency.symbol}{currentSummary.gridExportRevenue.toFixed(2)}
-                    </p>
-                    <p className="text-xs text-muted-foreground">feed-in</p>
+                    <p className="mt-1 text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{currency.symbol}{currentSummary.gridExportRevenue.toFixed(2)}</p>
                   </div>
                 )}
                 <div className="rounded-lg border p-3 text-center">
                   <p className="text-xs text-muted-foreground">Net Cost</p>
-                  <p className="mt-1 text-lg font-bold tabular-nums text-card-foreground">
-                    {currency.symbol}{currentSummary.netCost.toFixed(2)}
-                  </p>
-                  <p className="text-xs text-muted-foreground">after export</p>
+                  <p className="mt-1 text-lg font-bold tabular-nums text-card-foreground">{currency.symbol}{currentSummary.netCost.toFixed(2)}</p>
                 </div>
-                {currentSummary.consumption > 0 && (
+                {withoutSolar > 0.01 && (
                   <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3 text-center">
-                    <p className="text-xs text-muted-foreground">Without Solar</p>
-                    <p className="mt-1 text-lg font-bold tabular-nums text-muted-foreground line-through">
-                      {currency.symbol}{(currentSummary.consumption * avgRate).toFixed(2)}
+                    <p className="text-xs text-muted-foreground">Saving vs Grid</p>
+                    <p className="mt-1 text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{currency.symbol}{(withoutSolar - currentSummary.netCost).toFixed(2)}</p>
+                  </div>
+                )}
+                {hasBatt && (
+                  <div className={`rounded-lg p-3 text-center ${estBenefit >= 0 ? "border border-emerald-500/30 bg-emerald-500/5" : "border border-red-500/30 bg-red-500/5"}`}>
+                    <p className="text-xs text-muted-foreground">Batt Arbitrage</p>
+                    <p className={`mt-1 text-lg font-bold tabular-nums ${estBenefit >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-500"}`}>
+                      {estBenefit >= 0 ? "+" : ""}{currency.symbol}{estBenefit.toFixed(2)}
                     </p>
-                    <p className="text-xs text-emerald-600 dark:text-emerald-400">
-                      saving {currency.symbol}{(currentSummary.consumption * avgRate - currentSummary.netCost).toFixed(2)}
-                    </p>
+                    <p className="text-[10px] text-muted-foreground">est. {currency.symbol}{minRate.toFixed(2)} in / {currency.symbol}{maxRate.toFixed(2)} out</p>
                   </div>
                 )}
               </div>
-            )}
+              )
+            })()}
 
             {/* Daily average for non-day periods */}
             {currentSummary.days > 1 && avgRate > 0 && (
-              <div className="rounded-lg bg-muted/40 px-4 py-3">
-                <p className="text-xs leading-relaxed text-muted-foreground">
-                  <strong className="text-card-foreground">Daily average:</strong>{" "}
-                  {currency.symbol}{(currentSummary.netCost / currentSummary.days).toFixed(2)} net cost,{" "}
-                  {fmtE(currentSummary.gridImport / currentSummary.days).text} {fmtE(currentSummary.gridImport / currentSummary.days).unit} imported,{" "}
-                  {fmtE(currentSummary.gridExport / currentSummary.days).text} {fmtE(currentSummary.gridExport / currentSummary.days).unit} exported
-                  {" "}&middot; Based on {currentSummary.days} day{currentSummary.days !== 1 ? "s" : ""} of data
+              <div className="rounded-lg bg-muted/40 px-4 py-2">
+                <p className="text-xs text-muted-foreground">
+                  <strong className="text-card-foreground">Avg/day:</strong>{" "}
+                  {currency.symbol}{(currentSummary.netCost / currentSummary.days).toFixed(2)} net,{" "}
+                  {fmtE(currentSummary.gridImport / currentSummary.days).text} {fmtE(currentSummary.gridImport / currentSummary.days).unit} in,{" "}
+                  {fmtE(currentSummary.gridExport / currentSummary.days).text} {fmtE(currentSummary.gridExport / currentSummary.days).unit} out
+                  {" "}&middot; {currentSummary.days} days
                 </p>
               </div>
             )}
           </>
         )}
-
-        {/* Explanation */}
-        <div className="rounded-lg bg-muted/40 px-4 py-3">
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            <strong className="text-card-foreground">Load shifting</strong> moves electricity consumption from expensive peak times to cheap off-peak hours.
-            Your battery charges from the grid at off-peak rates, then discharges during the day to power your home and avoid costly peak imports.
-            Combined with direct solar usage, this maximizes self-sufficiency and minimizes your electricity bill.
-            Configure your tariff rate groups in Settings to see per-period cost breakdowns and savings estimates.
-          </p>
-        </div>
       </CardContent>
     </Card>
   )
