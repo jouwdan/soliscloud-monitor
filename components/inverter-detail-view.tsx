@@ -274,27 +274,46 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
                         )}
                       </div>
 
-                      {/* Projected electricity cost */}
-                      <div className="border-t pt-3">
-                        <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Projected Electricity Cost</p>
-                        <div className="grid grid-cols-3 gap-3 text-center">
-                          <div>
-                            <p className="text-[10px] text-muted-foreground">Daily</p>
-                            <p className="text-base font-bold tabular-nums text-card-foreground">{currency.symbol}{netCostToday.toFixed(2)}</p>
+                      {/* Projected electricity cost based on month data */}
+                      {(() => {
+                        const days = monthData || []
+                        const numDays = days.length
+                        if (numDays < 1 || avgRate <= 0) return null
+
+                        // Sum import cost and export revenue across all days in the month
+                        let totalImportCost = 0
+                        let totalExportRev = 0
+                        for (const d of days) {
+                          totalImportCost += (d.gridPurchasedEnergy || 0) * avgRate
+                          totalExportRev += (d.gridSellEnergy || 0) * exportRate
+                        }
+
+                        const totalNetCost = totalImportCost - totalExportRev
+                        const avgDailyCost = totalNetCost / numDays
+
+                        return (
+                          <div className="border-t pt-3">
+                            <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Estimated Electricity Cost</p>
+                            <div className="grid grid-cols-3 gap-3 text-center">
+                              <div>
+                                <p className="text-[10px] text-muted-foreground">Daily Avg</p>
+                                <p className="text-base font-bold tabular-nums text-card-foreground">{currency.symbol}{avgDailyCost.toFixed(2)}</p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] text-muted-foreground">Weekly</p>
+                                <p className="text-base font-bold tabular-nums text-card-foreground">{currency.symbol}{(avgDailyCost * 7).toFixed(2)}</p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] text-muted-foreground">Monthly</p>
+                                <p className="text-base font-bold tabular-nums text-card-foreground">{currency.symbol}{totalNetCost.toFixed(2)}</p>
+                              </div>
+                            </div>
+                            <p className="mt-1.5 text-center text-[9px] text-muted-foreground">
+                              Based on {numDays} day{numDays !== 1 ? "s" : ""} of data this month{exportRate > 0 ? " (net of export revenue)" : ""}
+                            </p>
                           </div>
-                          <div>
-                            <p className="text-[10px] text-muted-foreground">Weekly</p>
-                            <p className="text-base font-bold tabular-nums text-card-foreground">{currency.symbol}{(netCostToday * 7).toFixed(2)}</p>
-                          </div>
-                          <div>
-                            <p className="text-[10px] text-muted-foreground">Monthly</p>
-                            <p className="text-base font-bold tabular-nums text-card-foreground">{currency.symbol}{(netCostToday * 30).toFixed(2)}</p>
-                          </div>
-                        </div>
-                        <p className="mt-1.5 text-center text-[9px] text-muted-foreground">
-                          Based on today{"'"}s usage pattern{exportRate > 0 ? " (net of export revenue)" : ""}
-                        </p>
-                      </div>
+                        )
+                      })()}
                     </CardContent>
                   </Card>
                 )}
