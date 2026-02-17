@@ -122,8 +122,8 @@ export function PowerChart({ data }: PowerChartProps) {
         homeLoad: toKW(entry.familyLoadPower, entry.familyLoadPowerStr, loadPec),
         battCharge: batt > DEAD_BAND ? batt : 0,
         battDrain: batt < -DEAD_BAND ? Math.abs(batt) : 0,
-        gridImport: grid > DEAD_BAND ? grid : 0,
-        gridExport: grid < -DEAD_BAND ? Math.abs(grid) : 0,
+        gridImport: grid < -DEAD_BAND ? Math.abs(grid) : 0,
+        gridExport: grid > DEAD_BAND ? grid : 0,
       }
     })
 

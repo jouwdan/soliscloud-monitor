@@ -159,9 +159,28 @@ function slotContainsHour(slot: TariffTimeSlot, hour: number): boolean {
   return hour >= slot.startHour && hour < slot.endHour
 }
 
-/** Find the tariff group that applies to a given hour */
+/** Find the tariff group that applies to a given hour.
+ *  When multiple groups match (overlapping slots), prefer the most specific
+ *  (shortest total hours) to avoid a broad group shadowing a narrow one. */
 export function getTariffForHour(hour: number, groups: TariffGroup[]): TariffGroup | undefined {
-  return groups.find((g) => getTariffSlots(g).some((s) => slotContainsHour(s, hour)))
+  let best: TariffGroup | undefined
+  let bestHours = Infinity
+  for (const g of groups) {
+    const slots = getTariffSlots(g)
+    if (!slots.some((s) => slotContainsHour(s, hour))) continue
+    // Sum the total hours this group covers
+    let totalH = 0
+    for (const s of slots) {
+      totalH += s.endHour > s.startHour
+        ? s.endHour - s.startHour
+        : (24 - s.startHour) + s.endHour
+    }
+    if (totalH < bestHours) {
+      best = g
+      bestHours = totalH
+    }
+  }
+  return best
 }
 
 /** Get the rate in c/kWh for a given hour */
