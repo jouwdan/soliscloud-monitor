@@ -140,8 +140,9 @@ function analyzeLoadShifting(
     const loadPower = toKW(entry.familyLoadPower, entry.familyLoadPowerStr, (entry.familyLoadPowerPec ?? sharedPec) as string | undefined)
     const rate = getRateForHour(hour, tariffGroups)
 
-    const gi = gridPower > 0 ? gridPower * intervalHours : 0
-    const ge = gridPower < 0 ? Math.abs(gridPower) * intervalHours : 0
+    // Solis convention: negative pSum = importing from grid, positive = exporting
+    const gi = gridPower < 0 ? Math.abs(gridPower) * intervalHours : 0
+    const ge = gridPower > 0 ? gridPower * intervalHours : 0
     const bc = battPower > 0 ? battPower * intervalHours : 0
     const bd = battPower < 0 ? Math.abs(battPower) * intervalHours : 0
     const sl = solarPower > 0 ? solarPower * intervalHours : 0

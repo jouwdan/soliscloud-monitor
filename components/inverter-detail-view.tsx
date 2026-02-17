@@ -81,8 +81,9 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
       const gridPower = toKW(entry.pSum, entry.pSumStr, gridPec)
       const loadPower = toKW(entry.familyLoadPower, entry.familyLoadPowerStr, ((raw.familyLoadPowerPec ?? sharedPec) as string | undefined))
 
-      const gi = gridPower > 0 ? gridPower * intervalHours : 0
-      const ge = gridPower < 0 ? Math.abs(gridPower) * intervalHours : 0
+      // Solis: negative pSum = grid import, positive = grid export
+      const gi = gridPower < 0 ? Math.abs(gridPower) * intervalHours : 0
+      const ge = gridPower > 0 ? gridPower * intervalHours : 0
       const ld = loadPower > 0 ? loadPower * intervalHours : 0
       rawGI += gi; rawGE += ge; rawLoad += ld
 
