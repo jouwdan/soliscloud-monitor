@@ -38,7 +38,9 @@ import {
   getExportPrice,
   saveExportPrice,
   CURRENCY_OPTIONS,
+  getTariffSlots,
   type TariffGroup,
+  type TariffTimeSlot,
   type CurrencySettings,
 } from "@/lib/solis-client"
 import { Plus, Trash2, Coins, ArrowUpFromLine } from "lucide-react"
@@ -457,10 +459,12 @@ export function SettingsView() {
             <div className="flex h-7 overflow-hidden rounded-md border">
               {(() => {
                 const hours = Array.from({ length: 24 }, (_, i) => {
-                  const group = tariffGroups.find((g) => {
-                    if (g.startHour > g.endHour) return i >= g.startHour || i < g.endHour
-                    return i >= g.startHour && i < g.endHour
-                  })
+                  const group = tariffGroups.find((g) =>
+                    getTariffSlots(g).some((s) => {
+                      if (s.startHour > s.endHour) return i >= s.startHour || i < s.endHour
+                      return i >= s.startHour && i < s.endHour
+                    })
+                  )
                   return { hour: i, group }
                 })
                 return hours.map(({ hour, group }) => {
@@ -525,6 +529,7 @@ export function SettingsView() {
                 teal: "bg-teal-500",
                 slate: "bg-slate-500",
               }
+              const slots = getTariffSlots(group)
               return (
                 <div key={group.id} className="rounded-lg border p-3 space-y-3">
                   <div className="flex items-center gap-2">
@@ -552,53 +557,98 @@ export function SettingsView() {
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   </div>
-                  <div className="flex flex-wrap items-end gap-3">
-                    <div className="space-y-1">
-                      <Label className="text-[10px] text-muted-foreground">From</Label>
-                      <Select
-                        value={String(group.startHour)}
-                        onValueChange={(v) => {
-                          const updated = [...tariffGroups]
-                          updated[idx] = { ...group, startHour: parseInt(v, 10) }
-                          setTariffGroups(updated)
-                          setTariffSaved(false)
-                        }}
-                      >
-                        <SelectTrigger className="w-24 h-8 text-xs font-mono">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {Array.from({ length: 24 }, (_, i) => (
-                            <SelectItem key={i} value={String(i)}>
-                              {i === 0 ? "12 AM" : i < 12 ? `${i} AM` : i === 12 ? "12 PM" : `${i - 12} PM`}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-[10px] text-muted-foreground">To</Label>
-                      <Select
-                        value={String(group.endHour)}
-                        onValueChange={(v) => {
-                          const updated = [...tariffGroups]
-                          updated[idx] = { ...group, endHour: parseInt(v, 10) }
-                          setTariffGroups(updated)
-                          setTariffSaved(false)
-                        }}
-                      >
-                        <SelectTrigger className="w-24 h-8 text-xs font-mono">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {Array.from({ length: 24 }, (_, i) => (
-                            <SelectItem key={i} value={String(i)}>
-                              {i === 0 ? "12 AM" : i < 12 ? `${i} AM` : i === 12 ? "12 PM" : `${i - 12} PM`}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
+
+                  {/* Time slots */}
+                  <div className="space-y-2 pl-5">
+                    {slots.map((slot, sIdx) => (
+                      <div key={sIdx} className="flex items-end gap-2">
+                        <div className="space-y-1">
+                          <Label className="text-[10px] text-muted-foreground">From</Label>
+                          <Select
+                            value={String(slot.startHour)}
+                            onValueChange={(v) => {
+                              const newSlots = [...slots]
+                              newSlots[sIdx] = { ...slot, startHour: parseInt(v, 10) }
+                              const updated = [...tariffGroups]
+                              updated[idx] = { ...group, slots: newSlots, startHour: newSlots[0].startHour, endHour: newSlots[0].endHour }
+                              setTariffGroups(updated)
+                              setTariffSaved(false)
+                            }}
+                          >
+                            <SelectTrigger className="w-24 h-8 text-xs font-mono">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {Array.from({ length: 24 }, (_, i) => (
+                                <SelectItem key={i} value={String(i)}>
+                                  {i === 0 ? "12 AM" : i < 12 ? `${i} AM` : i === 12 ? "12 PM" : `${i - 12} PM`}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[10px] text-muted-foreground">To</Label>
+                          <Select
+                            value={String(slot.endHour)}
+                            onValueChange={(v) => {
+                              const newSlots = [...slots]
+                              newSlots[sIdx] = { ...slot, endHour: parseInt(v, 10) }
+                              const updated = [...tariffGroups]
+                              updated[idx] = { ...group, slots: newSlots, startHour: newSlots[0].startHour, endHour: newSlots[0].endHour }
+                              setTariffGroups(updated)
+                              setTariffSaved(false)
+                            }}
+                          >
+                            <SelectTrigger className="w-24 h-8 text-xs font-mono">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {Array.from({ length: 24 }, (_, i) => (
+                                <SelectItem key={i} value={String(i)}>
+                                  {i === 0 ? "12 AM" : i < 12 ? `${i} AM` : i === 12 ? "12 PM" : `${i - 12} PM`}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        {slots.length > 1 && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                            onClick={() => {
+                              const newSlots = slots.filter((_, si) => si !== sIdx)
+                              const updated = [...tariffGroups]
+                              updated[idx] = { ...group, slots: newSlots, startHour: newSlots[0].startHour, endHour: newSlots[0].endHour }
+                              setTariffGroups(updated)
+                              setTariffSaved(false)
+                            }}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs text-muted-foreground"
+                      onClick={() => {
+                        const newSlots = [...slots, { startHour: 0, endHour: 0 }]
+                        const updated = [...tariffGroups]
+                        updated[idx] = { ...group, slots: newSlots }
+                        setTariffGroups(updated)
+                        setTariffSaved(false)
+                      }}
+                    >
+                      <Plus className="mr-1 h-3 w-3" />
+                      Add time slot
+                    </Button>
+                  </div>
+
+                  {/* Rate and color */}
+                  <div className="flex flex-wrap items-end gap-3 pl-5">
                     <div className="space-y-1">
                       <Label className="text-[10px] text-muted-foreground">Rate ({currency.symbol}/kWh)</Label>
                       <Input

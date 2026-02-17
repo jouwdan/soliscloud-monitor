@@ -50,13 +50,27 @@ export function getRefreshMs(): number {
 
 // --------- Tariff & off-peak helpers (localStorage) ----------
 
+export interface TariffTimeSlot {
+  startHour: number
+  endHour: number
+}
+
 export interface TariffGroup {
   id: string
   name: string
+  /** @deprecated single slot kept for backwards compat -- prefer `slots` */
   startHour: number
+  /** @deprecated single slot kept for backwards compat -- prefer `slots` */
   endHour: number
-  rate: number // c/kWh
+  rate: number // currency/kWh
   color: string // tailwind-compatible colour for UI
+  slots?: TariffTimeSlot[]
+}
+
+/** Get the effective time slots for a tariff group (handles legacy single-slot format) */
+export function getTariffSlots(g: TariffGroup): TariffTimeSlot[] {
+  if (g.slots && g.slots.length > 0) return g.slots
+  return [{ startHour: g.startHour, endHour: g.endHour }]
 }
 
 export interface OffPeakSettings {
@@ -125,21 +139,29 @@ export function saveTariffGroups(groups: TariffGroup[]) {
 }
 
 export function isOffPeakHour(hour: number, settings: OffPeakSettings): boolean {
+  // Find the tariff group for this hour from the settings' own tariff groups
+  // If we have tariff groups, check if the matching group name contains "off-peak" (case insensitive)
+  if (settings.tariffGroups && settings.tariffGroups.length > 0) {
+    const matched = getTariffForHour(hour, settings.tariffGroups)
+    if (matched) return matched.name.toLowerCase().includes("off-peak") || matched.name.toLowerCase().includes("off peak")
+  }
+  // Legacy fallback
   if (settings.startHour > settings.endHour) {
     return hour >= settings.startHour || hour < settings.endHour
   }
   return hour >= settings.startHour && hour < settings.endHour
 }
 
+function slotContainsHour(slot: TariffTimeSlot, hour: number): boolean {
+  if (slot.startHour > slot.endHour) {
+    return hour >= slot.startHour || hour < slot.endHour
+  }
+  return hour >= slot.startHour && hour < slot.endHour
+}
+
 /** Find the tariff group that applies to a given hour */
 export function getTariffForHour(hour: number, groups: TariffGroup[]): TariffGroup | undefined {
-  return groups.find((g) => {
-    if (g.startHour > g.endHour) {
-      // wraps midnight
-      return hour >= g.startHour || hour < g.endHour
-    }
-    return hour >= g.startHour && hour < g.endHour
-  })
+  return groups.find((g) => getTariffSlots(g).some((s) => slotContainsHour(s, hour)))
 }
 
 /** Get the rate in c/kWh for a given hour */

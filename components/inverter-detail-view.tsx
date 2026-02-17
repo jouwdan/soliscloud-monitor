@@ -334,6 +334,20 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
       </div>
 
       {/* Energy Flow Breakdown */}
+      {(() => {
+        // Compute week totals from last 7 days of monthData
+        const sorted7 = [...(monthData || [])].sort((a, b) => (b.date || 0) - (a.date || 0)).slice(0, 7)
+        const wk = {
+          production: sorted7.reduce((s, d) => s + (d.energy || 0), 0),
+          consumption: sorted7.reduce((s, d) => s + (d.homeLoadEnergy || 0), 0),
+          gridImport: sorted7.reduce((s, d) => s + (d.gridPurchasedEnergy || 0), 0),
+          gridExport: sorted7.reduce((s, d) => s + (d.gridSellEnergy || 0), 0),
+          battCharge: sorted7.reduce((s, d) => s + (d.batteryChargeEnergy || 0), 0),
+          battDischarge: sorted7.reduce((s, d) => s + (d.batteryDischargeEnergy || 0), 0),
+        }
+        const thHidden = "hidden px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground"
+        const tdHidden = "hidden px-3 py-2.5 text-right tabular-nums text-card-foreground"
+        return (
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base font-semibold text-card-foreground">
@@ -342,15 +356,15 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
           </CardTitle>
         </CardHeader>
         <CardContent>
-            {/* Detailed energy breakdown table */}
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-muted/50">
                     <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Metric</th>
                     <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">Today</th>
-                    <th className="hidden px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground sm:table-cell">Month</th>
-                    <th className="hidden px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground md:table-cell">Year</th>
+                    <th className={`${thHidden} sm:table-cell`}>Week</th>
+                    <th className={`${thHidden} sm:table-cell`}>Month</th>
+                    <th className={`${thHidden} md:table-cell`}>Year</th>
                     <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">Total</th>
                   </tr>
                 </thead>
@@ -362,10 +376,13 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
                     <td className="px-3 py-2.5 text-right tabular-nums text-card-foreground">
                       {detail.eToday?.toFixed(1)} <span className="text-muted-foreground">{detail.eTodayStr}</span>
                     </td>
-                    <td className="hidden px-3 py-2.5 text-right tabular-nums text-card-foreground sm:table-cell">
+                    <td className={`${tdHidden} sm:table-cell`}>
+                      {wk.production.toFixed(1)} <span className="text-muted-foreground">kWh</span>
+                    </td>
+                    <td className={`${tdHidden} sm:table-cell`}>
                       {detail.eMonth?.toFixed(1)} <span className="text-muted-foreground">{detail.eMonthStr}</span>
                     </td>
-                    <td className="hidden px-3 py-2.5 text-right tabular-nums text-card-foreground md:table-cell">
+                    <td className={`${tdHidden} md:table-cell`}>
                       {detail.eYear?.toFixed(1)} <span className="text-muted-foreground">{detail.eYearStr}</span>
                     </td>
                     <td className="px-3 py-2.5 text-right tabular-nums text-card-foreground">
@@ -379,10 +396,13 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
                     <td className="px-3 py-2.5 text-right tabular-nums text-card-foreground">
                       {detail.homeLoadTodayEnergy?.toFixed(1)} <span className="text-muted-foreground">{detail.homeLoadTodayEnergyStr}</span>
                     </td>
-                    <td className="hidden px-3 py-2.5 text-right tabular-nums text-card-foreground sm:table-cell">
+                    <td className={`${tdHidden} sm:table-cell`}>
+                      {wk.consumption.toFixed(1)} <span className="text-muted-foreground">kWh</span>
+                    </td>
+                    <td className={`${tdHidden} sm:table-cell`}>
                       {(detail.homeLoadMonthEnergy ?? 0).toFixed(1)} <span className="text-muted-foreground">{detail.homeLoadMonthEnergyStr || "kWh"}</span>
                     </td>
-                    <td className="hidden px-3 py-2.5 text-right tabular-nums text-card-foreground md:table-cell">
+                    <td className={`${tdHidden} md:table-cell`}>
                       {(detail.homeLoadYearEnergy ?? 0).toFixed(1)} <span className="text-muted-foreground">{detail.homeLoadYearEnergyStr || "kWh"}</span>
                     </td>
                     <td className="px-3 py-2.5 text-right tabular-nums text-card-foreground">
@@ -396,10 +416,13 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
                     <td className="px-3 py-2.5 text-right tabular-nums text-card-foreground">
                       {detail.gridPurchasedTodayEnergy?.toFixed(1)} <span className="text-muted-foreground">{detail.gridPurchasedTodayEnergyStr}</span>
                     </td>
-                    <td className="hidden px-3 py-2.5 text-right tabular-nums text-card-foreground sm:table-cell">
+                    <td className={`${tdHidden} sm:table-cell`}>
+                      {wk.gridImport.toFixed(1)} <span className="text-muted-foreground">kWh</span>
+                    </td>
+                    <td className={`${tdHidden} sm:table-cell`}>
                       {(detail.gridPurchasedMonthEnergy ?? 0).toFixed(1)} <span className="text-muted-foreground">{detail.gridPurchasedMonthEnergyStr || "kWh"}</span>
                     </td>
-                    <td className="hidden px-3 py-2.5 text-right tabular-nums text-card-foreground md:table-cell">
+                    <td className={`${tdHidden} md:table-cell`}>
                       {(detail.gridPurchasedYearEnergy ?? 0).toFixed(1)} <span className="text-muted-foreground">{detail.gridPurchasedYearEnergyStr || "kWh"}</span>
                     </td>
                     <td className="px-3 py-2.5 text-right tabular-nums text-card-foreground">
@@ -413,10 +436,13 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
                     <td className="px-3 py-2.5 text-right tabular-nums text-card-foreground">
                       {detail.gridSellTodayEnergy?.toFixed(1)} <span className="text-muted-foreground">{detail.gridSellTodayEnergyStr}</span>
                     </td>
-                    <td className="hidden px-3 py-2.5 text-right tabular-nums text-card-foreground sm:table-cell">
+                    <td className={`${tdHidden} sm:table-cell`}>
+                      {wk.gridExport.toFixed(1)} <span className="text-muted-foreground">kWh</span>
+                    </td>
+                    <td className={`${tdHidden} sm:table-cell`}>
                       {(detail.gridSellMonthEnergy ?? 0).toFixed(1)} <span className="text-muted-foreground">{detail.gridSellMonthEnergyStr || "kWh"}</span>
                     </td>
-                    <td className="hidden px-3 py-2.5 text-right tabular-nums text-card-foreground md:table-cell">
+                    <td className={`${tdHidden} md:table-cell`}>
                       {(detail.gridSellYearEnergy ?? 0).toFixed(1)} <span className="text-muted-foreground">{detail.gridSellYearEnergyStr || "kWh"}</span>
                     </td>
                     <td className="px-3 py-2.5 text-right tabular-nums text-card-foreground">
@@ -431,10 +457,13 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
                     <td className="px-3 py-2.5 text-right tabular-nums text-card-foreground">
                       {detail.batteryTodayChargeEnergy?.toFixed(1)} <span className="text-muted-foreground">{detail.batteryTodayChargeEnergyStr}</span>
                     </td>
-                    <td className="hidden px-3 py-2.5 text-right tabular-nums text-card-foreground sm:table-cell">
+                    <td className={`${tdHidden} sm:table-cell`}>
+                      {wk.battCharge.toFixed(1)} <span className="text-muted-foreground">kWh</span>
+                    </td>
+                    <td className={`${tdHidden} sm:table-cell`}>
                       {(detail.batteryMonthChargeEnergy ?? 0).toFixed(1)} <span className="text-muted-foreground">{detail.batteryMonthChargeEnergyStr || "kWh"}</span>
                     </td>
-                    <td className="hidden px-3 py-2.5 text-right tabular-nums text-card-foreground md:table-cell">
+                    <td className={`${tdHidden} md:table-cell`}>
                       {(detail.batteryYearChargeEnergy ?? 0).toFixed(1)} <span className="text-muted-foreground">{detail.batteryYearChargeEnergyStr || "kWh"}</span>
                     </td>
                     <td className="px-3 py-2.5 text-right tabular-nums text-card-foreground">
@@ -450,10 +479,13 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
                     <td className="px-3 py-2.5 text-right tabular-nums text-card-foreground">
                       {detail.batteryTodayDischargeEnergy?.toFixed(1)} <span className="text-muted-foreground">{detail.batteryTodayDischargeEnergyStr}</span>
                     </td>
-                    <td className="hidden px-3 py-2.5 text-right tabular-nums text-card-foreground sm:table-cell">
+                    <td className={`${tdHidden} sm:table-cell`}>
+                      {wk.battDischarge.toFixed(1)} <span className="text-muted-foreground">kWh</span>
+                    </td>
+                    <td className={`${tdHidden} sm:table-cell`}>
                       {(detail.batteryMonthDischargeEnergy ?? 0).toFixed(1)} <span className="text-muted-foreground">{detail.batteryMonthDischargeEnergyStr || "kWh"}</span>
                     </td>
-                    <td className="hidden px-3 py-2.5 text-right tabular-nums text-card-foreground md:table-cell">
+                    <td className={`${tdHidden} md:table-cell`}>
                       {(detail.batteryYearDischargeEnergy ?? 0).toFixed(1)} <span className="text-muted-foreground">{detail.batteryYearDischargeEnergyStr || "kWh"}</span>
                     </td>
                     <td className="px-3 py-2.5 text-right tabular-nums text-card-foreground">
@@ -469,8 +501,9 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
                       <td className="px-3 py-2.5 text-right tabular-nums text-card-foreground">
                         {detail.backupTodayEnergy?.toFixed(1)} <span className="text-muted-foreground">{detail.backupTodayEnergyStr}</span>
                       </td>
-                      <td className="hidden px-3 py-2.5 text-right tabular-nums text-muted-foreground sm:table-cell">--</td>
-                      <td className="hidden px-3 py-2.5 text-right tabular-nums text-muted-foreground md:table-cell">--</td>
+                      <td className={`${tdHidden} sm:table-cell`}>--</td>
+                      <td className={`${tdHidden} sm:table-cell`}>--</td>
+                      <td className={`${tdHidden} md:table-cell`}>--</td>
                       <td className="px-3 py-2.5 text-right tabular-nums text-card-foreground">
                         {detail.backupTotalEnergy?.toFixed(1)} <span className="text-muted-foreground">{detail.backupTotalEnergyStr}</span>
                       </td>
@@ -481,10 +514,12 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
             </div>
           </CardContent>
       </Card>
+        )
+      })()}
 
       {/* Load Shifting Analysis */}
       {dayData && dayData.length > 0 && (
-        <LoadShiftingCard detail={detail} dayData={dayData} />
+        <LoadShiftingCard detail={detail} dayData={dayData} monthData={monthData} yearData={yearData} />
       )}
 
       {/* DC/AC Readings */}

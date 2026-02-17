@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import {
   Moon,
   Sun,
@@ -11,16 +11,20 @@ import {
   Coins,
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   getOffPeakSettings,
   isOffPeakHour,
   getTariffGroups,
+  getTariffSlots,
   getRateForHour,
   getCurrencySettings,
   getExportPrice,
   toKW,
   type InverterDayEntry,
   type InverterDetail,
+  type InverterMonthEntry,
+  type InverterYearEntry,
   type OffPeakSettings,
   type TariffGroup,
   type CurrencySettings,
@@ -29,6 +33,8 @@ import {
 interface LoadShiftingCardProps {
   detail: InverterDetail
   dayData: InverterDayEntry[]
+  monthData?: InverterMonthEntry[]
+  yearData?: InverterYearEntry[]
 }
 
 interface TariffBreakdown {
@@ -222,14 +228,115 @@ function formatHour(h: number) {
   return `${display}${period}`
 }
 
-export function LoadShiftingCard({ detail, dayData }: LoadShiftingCardProps) {
+type Period = "day" | "week" | "month" | "year" | "lifetime"
+
+interface PeriodSummary {
+  label: string
+  gridImport: number
+  gridExport: number
+  gridImportCost: number
+  gridExportRevenue: number
+  netCost: number
+  consumption: number
+  production: number
+  batteryCharge: number
+  batteryDischarge: number
+  days: number
+}
+
+function computePeriodSummaries(
+  detail: InverterDetail,
+  monthData: InverterMonthEntry[],
+  yearData: InverterYearEntry[],
+  avgRate: number,
+  exportRate: number,
+): Record<Period, PeriodSummary> {
+  // Day
+  const dayImport = detail.gridPurchasedTodayEnergy || 0
+  const dayExport = detail.gridSellTodayEnergy || 0
+  const dayImportCost = dayImport * avgRate
+  const dayExportRev = dayExport * exportRate
+
+  // Week (last 7 days from month data)
+  const sorted = [...monthData].sort((a, b) => (b.date || 0) - (a.date || 0))
+  const weekDays = sorted.slice(0, 7)
+  const weekImport = weekDays.reduce((s, d) => s + (d.gridPurchasedEnergy || 0), 0)
+  const weekExport = weekDays.reduce((s, d) => s + (d.gridSellEnergy || 0), 0)
+
+  // Month
+  const monthImport = detail.gridPurchasedMonthEnergy ?? monthData.reduce((s, d) => s + (d.gridPurchasedEnergy || 0), 0)
+  const monthExport = detail.gridSellMonthEnergy ?? monthData.reduce((s, d) => s + (d.gridSellEnergy || 0), 0)
+
+  // Year
+  const yearImport = detail.gridPurchasedYearEnergy ?? yearData.reduce((s, d) => s + (d.gridPurchasedEnergy || 0), 0)
+  const yearExport = detail.gridSellYearEnergy ?? yearData.reduce((s, d) => s + (d.gridSellEnergy || 0), 0)
+
+  // Lifetime
+  const totalImport = detail.gridPurchasedTotalEnergy || 0
+  const totalExport = detail.gridSellTotalEnergy || 0
+
+  const make = (label: string, imp: number, exp: number, prod: number, cons: number, battC: number, battD: number, days: number): PeriodSummary => ({
+    label,
+    gridImport: imp,
+    gridExport: exp,
+    gridImportCost: imp * avgRate,
+    gridExportRevenue: exp * exportRate,
+    netCost: imp * avgRate - exp * exportRate,
+    consumption: cons,
+    production: prod,
+    batteryCharge: battC,
+    batteryDischarge: battD,
+    days,
+  })
+
+  return {
+    day: make("Today", dayImport, dayExport,
+      detail.eToday || 0, detail.homeLoadTodayEnergy || 0,
+      detail.batteryTodayChargeEnergy || 0, detail.batteryTodayDischargeEnergy || 0, 1),
+    week: make("This Week", weekImport, weekExport,
+      weekDays.reduce((s, d) => s + (d.energy || 0), 0),
+      weekDays.reduce((s, d) => s + (d.homeLoadEnergy || 0), 0),
+      weekDays.reduce((s, d) => s + (d.batteryChargeEnergy || 0), 0),
+      weekDays.reduce((s, d) => s + (d.batteryDischargeEnergy || 0), 0),
+      weekDays.length),
+    month: make("This Month", monthImport, monthExport,
+      detail.eMonth || 0, detail.homeLoadMonthEnergy ?? monthData.reduce((s, d) => s + (d.homeLoadEnergy || 0), 0),
+      detail.batteryMonthChargeEnergy ?? monthData.reduce((s, d) => s + (d.batteryChargeEnergy || 0), 0),
+      detail.batteryMonthDischargeEnergy ?? monthData.reduce((s, d) => s + (d.batteryDischargeEnergy || 0), 0),
+      monthData.length || 30),
+    year: make("This Year", yearImport, yearExport,
+      detail.eYear || 0, detail.homeLoadYearEnergy ?? yearData.reduce((s, d) => s + (d.homeLoadEnergy || 0), 0),
+      detail.batteryYearChargeEnergy ?? yearData.reduce((s, d) => s + (d.batteryChargeEnergy || 0), 0),
+      detail.batteryYearDischargeEnergy ?? yearData.reduce((s, d) => s + (d.batteryDischargeEnergy || 0), 0),
+      yearData.length || 365),
+    lifetime: make("Lifetime", totalImport, totalExport,
+      detail.eTotal || 0, detail.homeLoadTotalEnergy || 0,
+      detail.batteryTotalChargeEnergy || 0, detail.batteryTotalDischargeEnergy || 0, 0),
+  }
+}
+
+export function LoadShiftingCard({ detail, dayData, monthData, yearData }: LoadShiftingCardProps) {
   const currency = useMemo(() => getCurrencySettings(), [])
+  const [period, setPeriod] = useState<Period>("day")
 
   const analysis = useMemo(() => {
     const settings = getOffPeakSettings()
     const groups = getTariffGroups()
     return analyzeLoadShifting(dayData, settings, groups)
   }, [dayData])
+
+  const tariffGroups = useMemo(() => getTariffGroups(), [])
+  const avgRate = useMemo(() => {
+    const rates = tariffGroups.filter((g) => g.rate > 0).map((g) => g.rate)
+    return rates.length > 0 ? rates.reduce((a, b) => a + b, 0) / rates.length : 0
+  }, [tariffGroups])
+  const exportRate = useMemo(() => getExportPrice(), [])
+
+  const summaries = useMemo(
+    () => computePeriodSummaries(detail, monthData || [], yearData || [], avgRate, exportRate),
+    [detail, monthData, yearData, avgRate, exportRate]
+  )
+  const currentSummary = summaries[period]
 
   const hasData = analysis.offPeakPoints > 0 || analysis.peakPoints > 0
   const hasBattery =
@@ -244,26 +351,34 @@ export function LoadShiftingCard({ detail, dayData }: LoadShiftingCardProps) {
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-base font-semibold text-card-foreground">
-          <TrendingUp className="h-4 w-4 text-primary" />
-          Load Shifting Analysis
-          <span className="ml-auto text-xs font-normal text-muted-foreground">Today</span>
-        </CardTitle>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <CardTitle className="flex items-center gap-2 text-base font-semibold text-card-foreground">
+            <TrendingUp className="h-4 w-4 text-primary" />
+            Load Shifting Analysis
+          </CardTitle>
+          <Tabs value={period} onValueChange={(v) => setPeriod(v as Period)}>
+            <TabsList className="h-8">
+              <TabsTrigger value="day" className="text-xs px-2.5">Day</TabsTrigger>
+              <TabsTrigger value="week" className="text-xs px-2.5">Week</TabsTrigger>
+              <TabsTrigger value="month" className="text-xs px-2.5">Month</TabsTrigger>
+              <TabsTrigger value="year" className="text-xs px-2.5">Year</TabsTrigger>
+              <TabsTrigger value="lifetime" className="text-xs px-2.5">Life</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
         <p className="text-xs text-muted-foreground">
-          Off-peak: {formatHour(analysis.settings.startHour)}&ndash;{formatHour(analysis.settings.endHour)} &middot;
-          Peak: {formatHour(analysis.settings.endHour)}&ndash;{formatHour(analysis.settings.startHour)} &middot;
-          <span className="text-primary"> Configurable in Settings</span>
+          <span className="text-primary">Configurable in Settings</span>
         </p>
       </CardHeader>
       <CardContent className="space-y-5">
-        {!hasData ? (
+        {period === "day" && !hasData ? (
           <div className="flex items-center gap-3 rounded-lg border border-dashed p-6 text-center">
             <Info className="h-5 w-5 shrink-0 text-muted-foreground" />
             <p className="text-sm text-muted-foreground">
               No time-series data available for today yet. Data points accumulate throughout the day.
             </p>
           </div>
-        ) : (
+        ) : period === "day" ? (
           <>
             {/* Load shift efficiency gauge */}
             <div className="flex flex-col items-center gap-2 rounded-lg border bg-muted/30 p-5">
@@ -301,9 +416,6 @@ export function LoadShiftingCard({ detail, dayData }: LoadShiftingCardProps) {
                   <h3 className="text-sm font-semibold text-card-foreground">
                     Off-Peak
                   </h3>
-                  <span className="ml-auto rounded-full bg-indigo-500/10 px-2 py-0.5 text-xs font-medium text-indigo-500">
-                    {formatHour(analysis.settings.startHour)}&ndash;{formatHour(analysis.settings.endHour)}
-                  </span>
                 </div>
                 <div className="space-y-2.5">
                   <div className="flex items-center justify-between text-sm">
@@ -355,9 +467,6 @@ export function LoadShiftingCard({ detail, dayData }: LoadShiftingCardProps) {
                   <h3 className="text-sm font-semibold text-card-foreground">
                     Peak
                   </h3>
-                  <span className="ml-auto rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-500">
-                    {formatHour(analysis.settings.endHour)}&ndash;{formatHour(analysis.settings.startHour)}
-                  </span>
                 </div>
                 <div className="space-y-2.5">
                   <div className="flex items-center justify-between text-sm">
@@ -525,6 +634,8 @@ export function LoadShiftingCard({ detail, dayData }: LoadShiftingCardProps) {
                           teal: "bg-teal-500",
                           slate: "bg-slate-500",
                         }
+                        const slots = getTariffSlots(b.group)
+                        const hoursLabel = slots.map((s) => `${formatHour(s.startHour)}\u2013${formatHour(s.endHour)}`).join(", ")
                         return (
                           <tr key={b.group.id}>
                             <td className="flex items-center gap-2 px-3 py-2 font-medium text-card-foreground">
@@ -532,7 +643,7 @@ export function LoadShiftingCard({ detail, dayData }: LoadShiftingCardProps) {
                               {b.group.name}
                             </td>
                             <td className="px-3 py-2 text-xs text-muted-foreground font-mono">
-                              {formatHour(b.group.startHour)}&ndash;{formatHour(b.group.endHour)}
+                              {hoursLabel}
                             </td>
                             <td className="px-3 py-2 text-right tabular-nums text-card-foreground">
                               {b.group.rate > 0 ? `${currency.symbol}${b.group.rate}` : "--"}
@@ -562,18 +673,137 @@ export function LoadShiftingCard({ detail, dayData }: LoadShiftingCardProps) {
                 </div>
               </div>
             )}
-
-            {/* Explanation */}
-            <div className="rounded-lg bg-muted/40 px-4 py-3">
-              <p className="text-xs leading-relaxed text-muted-foreground">
-                <strong className="text-card-foreground">Load shifting</strong> moves electricity consumption from expensive peak times to cheap off-peak hours.
-                Your battery charges from the grid at night ({formatHour(analysis.settings.startHour)}&ndash;{formatHour(analysis.settings.endHour)}) at lower rates, then discharges during the day to power your home and avoid costly peak imports.
-                Combined with direct solar usage, this maximizes self-sufficiency and minimizes your electricity bill.
-                Configure your tariff rate groups in Settings to see per-period cost breakdowns and savings estimates.
-              </p>
+          </>
+        ) : (
+          /* Week / Month / Year / Lifetime summary view */
+          <>
+            {/* Energy overview grid */}
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <div className="rounded-lg border p-3 text-center">
+                <p className="text-xs text-muted-foreground">Production</p>
+                <p className="mt-1 text-lg font-bold tabular-nums text-card-foreground">
+                  {currentSummary.production.toFixed(1)}
+                </p>
+                <p className="text-xs text-muted-foreground">kWh</p>
+              </div>
+              <div className="rounded-lg border p-3 text-center">
+                <p className="text-xs text-muted-foreground">Consumption</p>
+                <p className="mt-1 text-lg font-bold tabular-nums text-card-foreground">
+                  {currentSummary.consumption.toFixed(1)}
+                </p>
+                <p className="text-xs text-muted-foreground">kWh</p>
+              </div>
+              <div className="rounded-lg border p-3 text-center">
+                <p className="text-xs text-muted-foreground">Self-Consumed</p>
+                <p className="mt-1 text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+                  {Math.max(0, currentSummary.production - currentSummary.gridExport).toFixed(1)}
+                </p>
+                <p className="text-xs text-muted-foreground">kWh</p>
+              </div>
             </div>
+
+            {/* Grid exchange */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-lg border p-3 text-center">
+                <p className="text-xs text-muted-foreground">Grid Import</p>
+                <p className="mt-1 text-lg font-bold tabular-nums text-red-500">
+                  {currentSummary.gridImport.toFixed(1)}
+                </p>
+                <p className="text-xs text-muted-foreground">kWh</p>
+              </div>
+              <div className="rounded-lg border p-3 text-center">
+                <p className="text-xs text-muted-foreground">Grid Export</p>
+                <p className="mt-1 text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+                  {currentSummary.gridExport.toFixed(1)}
+                </p>
+                <p className="text-xs text-muted-foreground">kWh</p>
+              </div>
+            </div>
+
+            {/* Battery */}
+            {(currentSummary.batteryCharge > 0 || currentSummary.batteryDischarge > 0) && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-lg border p-3 text-center">
+                  <p className="text-xs text-muted-foreground">Battery Charge</p>
+                  <p className="mt-1 text-lg font-bold tabular-nums text-card-foreground">
+                    {currentSummary.batteryCharge.toFixed(1)}
+                  </p>
+                  <p className="text-xs text-muted-foreground">kWh</p>
+                </div>
+                <div className="rounded-lg border p-3 text-center">
+                  <p className="text-xs text-muted-foreground">Battery Discharge</p>
+                  <p className="mt-1 text-lg font-bold tabular-nums text-card-foreground">
+                    {currentSummary.batteryDischarge.toFixed(1)}
+                  </p>
+                  <p className="text-xs text-muted-foreground">kWh</p>
+                </div>
+              </div>
+            )}
+
+            {/* Cost summary */}
+            {avgRate > 0 && (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className="rounded-lg border p-3 text-center">
+                  <p className="text-xs text-muted-foreground">Import Cost</p>
+                  <p className="mt-1 text-lg font-bold tabular-nums text-card-foreground">
+                    {currency.symbol}{currentSummary.gridImportCost.toFixed(2)}
+                  </p>
+                  <p className="text-xs text-muted-foreground">grid purchases</p>
+                </div>
+                {currentSummary.gridExportRevenue > 0.01 && (
+                  <div className="rounded-lg border p-3 text-center">
+                    <p className="text-xs text-muted-foreground">Export Revenue</p>
+                    <p className="mt-1 text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+                      {currency.symbol}{currentSummary.gridExportRevenue.toFixed(2)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">feed-in</p>
+                  </div>
+                )}
+                <div className="rounded-lg border p-3 text-center">
+                  <p className="text-xs text-muted-foreground">Net Cost</p>
+                  <p className="mt-1 text-lg font-bold tabular-nums text-card-foreground">
+                    {currency.symbol}{currentSummary.netCost.toFixed(2)}
+                  </p>
+                  <p className="text-xs text-muted-foreground">after export</p>
+                </div>
+                {currentSummary.consumption > 0 && (
+                  <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3 text-center">
+                    <p className="text-xs text-muted-foreground">Without Solar</p>
+                    <p className="mt-1 text-lg font-bold tabular-nums text-muted-foreground line-through">
+                      {currency.symbol}{(currentSummary.consumption * avgRate).toFixed(2)}
+                    </p>
+                    <p className="text-xs text-emerald-600 dark:text-emerald-400">
+                      saving {currency.symbol}{(currentSummary.consumption * avgRate - currentSummary.netCost).toFixed(2)}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Daily average for non-day periods */}
+            {currentSummary.days > 1 && avgRate > 0 && (
+              <div className="rounded-lg bg-muted/40 px-4 py-3">
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  <strong className="text-card-foreground">Daily average:</strong>{" "}
+                  {currency.symbol}{(currentSummary.netCost / currentSummary.days).toFixed(2)} net cost,{" "}
+                  {(currentSummary.gridImport / currentSummary.days).toFixed(1)} kWh imported,{" "}
+                  {(currentSummary.gridExport / currentSummary.days).toFixed(1)} kWh exported
+                  {" "}&middot; Based on {currentSummary.days} day{currentSummary.days !== 1 ? "s" : ""} of data
+                </p>
+              </div>
+            )}
           </>
         )}
+
+        {/* Explanation */}
+        <div className="rounded-lg bg-muted/40 px-4 py-3">
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            <strong className="text-card-foreground">Load shifting</strong> moves electricity consumption from expensive peak times to cheap off-peak hours.
+            Your battery charges from the grid at off-peak rates, then discharges during the day to power your home and avoid costly peak imports.
+            Combined with direct solar usage, this maximizes self-sufficiency and minimizes your electricity bill.
+            Configure your tariff rate groups in Settings to see per-period cost breakdowns and savings estimates.
+          </p>
+        </div>
       </CardContent>
     </Card>
   )
