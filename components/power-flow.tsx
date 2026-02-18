@@ -200,6 +200,12 @@ export function PowerFlow({ detail }: { detail: InverterDetail }) {
   const batteryDischarging = batteryPower < -0.01
   const homeActive = homePower > 0.01
 
+  // Infer charge source: only show solar -> battery if there's solar surplus after serving home load.
+  const batteryChargePower = Math.max(0, batteryPower)
+  const solarSurplus = Math.max(0, solarPower - homePower)
+  const solarToBatteryPower = Math.min(batteryChargePower, solarSurplus)
+  const gridToBatteryPower = Math.max(0, batteryChargePower - solarToBatteryPower)
+
   /* Node positions — viewBox is 400 x 460 when strings shown, 400 x 400 otherwise */
   const stringRowY = 20      // y-centre of PV string pills
   const yOffset = hasStrings ? 60 : 0 // push main diagram down when strings present
@@ -213,9 +219,10 @@ export function PowerFlow({ detail }: { detail: InverterDetail }) {
 
   /* Line opacity helpers */
   const solarToHome = solarActive && homeActive
-  const solarToBattery = solarActive && hasBattery && batteryCharging
+  const solarToBattery = hasBattery && solarToBatteryPower > 0.01
   const solarToGrid = solarActive && gridExporting
   const gridToHome = gridImporting && homeActive
+  const gridToBattery = hasBattery && gridImporting && gridToBatteryPower > 0.01
   const batteryToHome = hasBattery && batteryDischarging && homeActive
 
   return (
@@ -327,9 +334,9 @@ export function PowerFlow({ detail }: { detail: InverterDetail }) {
             d={`M ${grid.x} ${grid.y} Q ${battery.x} ${grid.y} ${battery.x} ${battery.y}`}
             fill="none"
             stroke={GRID_COLOR}
-            strokeWidth={1}
-            strokeDasharray="4 4"
-            opacity={0.12}
+            strokeWidth={gridToBattery ? 2 : 1}
+            strokeDasharray={gridToBattery ? "none" : "4 4"}
+            opacity={gridToBattery ? 0.5 : 0.12}
           />
         )}
 
@@ -338,6 +345,7 @@ export function PowerFlow({ detail }: { detail: InverterDetail }) {
         {hasBattery && <FlowDots pathId="path-solar-battery" color={SOLAR_COLOR} active={solarToBattery} />}
         <FlowDots pathId="path-solar-grid" color={SOLAR_COLOR} active={solarToGrid} />
         <FlowDots pathId="path-grid-home" color={GRID_COLOR} active={gridToHome} />
+        {hasBattery && <FlowDots pathId="path-grid-battery" color={GRID_COLOR} active={gridToBattery} />}
         {hasBattery && <FlowDots pathId="path-battery-home" color={BATTERY_COLOR} active={batteryToHome} />}
 
         {/* ─── Nodes ─── */}
