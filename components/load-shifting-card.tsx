@@ -70,6 +70,10 @@ interface LoadShiftingAnalysis {
   gridExportRevenue: number
   netCost: number
   costWithoutSolar: number
+  // Full off-peak/peak breakdowns
+  peakBatteryCharge: number
+  offPeakBatteryDischarge: number
+  offPeakSolarDirect: number
   // Battery economics
   batteryChargeCost: number      // cost of energy used to charge battery
   batteryDischargeValue: number  // value of grid imports avoided by discharging
@@ -99,8 +103,9 @@ function analyzeLoadShifting(
   let rawGridImport = 0, rawGridExport = 0, rawBattCharge = 0, rawBattDischarge = 0
   let rawSolar = 0, rawLoad = 0
   let rawOffPeakGridImport = 0, rawPeakGridImport = 0
-  let rawOffPeakBattCharge = 0, rawPeakBattDischarge = 0
-  let rawPeakSolar = 0
+  let rawOffPeakBattCharge = 0, rawPeakBattCharge = 0
+  let rawOffPeakBattDischarge = 0, rawPeakBattDischarge = 0
+  let rawOffPeakSolar = 0, rawPeakSolar = 0
   let rawOffPeakLoad = 0, rawPeakLoad = 0
   let offPeakPoints = 0, peakPoints = 0
 
@@ -133,11 +138,12 @@ function analyzeLoadShifting(
 
     const raw = entry as Record<string, unknown>
     const sharedPec = entry.pacPec
+    const unitFallback = entry.pacStr // "W" in most responses – use as fallback when metric has no Str
     const gridPec = (raw.psumPec ?? raw.psumCalPec ?? raw.pSumPec ?? sharedPec) as string | undefined
-    const gridPower = toKW(entry.pSum, entry.pSumStr, gridPec)
-    const battPower = toKW(entry.batteryPower, entry.batteryPowerStr, (entry.batteryPowerPec ?? sharedPec) as string | undefined)
+    const gridPower = toKW(entry.pSum, entry.pSumStr || unitFallback, gridPec)
+    const battPower = toKW(entry.batteryPower, entry.batteryPowerStr || unitFallback, (entry.batteryPowerPec ?? sharedPec) as string | undefined)
     const solarPower = toKW(entry.pac, entry.pacStr, entry.pacPec)
-    const loadPower = toKW(entry.familyLoadPower, entry.familyLoadPowerStr, (entry.familyLoadPowerPec ?? sharedPec) as string | undefined)
+    const loadPower = toKW(entry.familyLoadPower, entry.familyLoadPowerStr || unitFallback, (entry.familyLoadPowerPec ?? sharedPec) as string | undefined)
     const rate = getRateForHour(hour, tariffGroups)
 
     // Solis convention: negative pSum = importing from grid, positive = exporting
@@ -168,10 +174,13 @@ function analyzeLoadShifting(
       offPeakPoints++
       rawOffPeakGridImport += gi
       rawOffPeakBattCharge += bc
+      rawOffPeakBattDischarge += bd
+      rawOffPeakSolar += sl
       rawOffPeakLoad += ld
     } else {
       peakPoints++
       rawPeakGridImport += gi
+      rawPeakBattCharge += bc
       rawPeakBattDischarge += bd
       rawPeakSolar += sl
       rawPeakLoad += ld
@@ -188,7 +197,10 @@ function analyzeLoadShifting(
   const offPeakGridImport = rawOffPeakGridImport * scaleGrid
   const peakGridImport = rawPeakGridImport * scaleGrid
   const offPeakBatteryCharge = rawOffPeakBattCharge * scaleBattC
+  const peakBatteryCharge = rawPeakBattCharge * scaleBattC
+  const offPeakBatteryDischarge = rawOffPeakBattDischarge * scaleBattD
   const peakBatteryDischarge = rawPeakBattDischarge * scaleBattD
+  const offPeakSolarDirect = rawOffPeakSolar * scaleSolar
   const peakSolarDirect = rawPeakSolar * scaleSolar
   const offPeakConsumption = rawOffPeakLoad * scaleLoad
   const peakConsumption = rawPeakLoad * scaleLoad
@@ -254,7 +266,10 @@ function analyzeLoadShifting(
     offPeakGridImport,
     peakGridImport,
     offPeakBatteryCharge,
+    peakBatteryCharge,
+    offPeakBatteryDischarge,
     peakBatteryDischarge,
+    offPeakSolarDirect,
     peakSolarDirect,
     offPeakConsumption,
     peakConsumption,
@@ -548,23 +563,23 @@ export function LoadShiftingCard({ detail, dayData, monthData, yearData }: LoadS
                   </tr>
                   <tr>
                     <td className="flex items-center gap-1.5 px-3 py-2 font-medium text-card-foreground"><Sun className="h-3.5 w-3.5 text-primary" /> Solar Direct</td>
-                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">--</td>
-                    <td className="px-3 py-2 text-right tabular-nums text-emerald-600 dark:text-emerald-400">{analysis.peakSolarDirect.toFixed(2)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums font-medium text-emerald-600 dark:text-emerald-400">{analysis.peakSolarDirect.toFixed(2)} kWh</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-card-foreground">{analysis.offPeakSolarDirect > 0.001 ? analysis.offPeakSolarDirect.toFixed(2) : "--"}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-emerald-600 dark:text-emerald-400">{analysis.peakSolarDirect > 0.001 ? analysis.peakSolarDirect.toFixed(2) : "0.00"}</td>
+                    <td className="px-3 py-2 text-right tabular-nums font-medium text-emerald-600 dark:text-emerald-400">{(analysis.offPeakSolarDirect + analysis.peakSolarDirect).toFixed(2)} kWh</td>
                   </tr>
                   {hasBattery && (
                   <>
                   <tr>
                     <td className="flex items-center gap-1.5 px-3 py-2 font-medium text-card-foreground"><BatteryCharging className="h-3.5 w-3.5 text-primary" /> Batt Charge</td>
-                    <td className="px-3 py-2 text-right tabular-nums text-card-foreground">{analysis.offPeakBatteryCharge.toFixed(2)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">--</td>
-                    <td className="px-3 py-2 text-right tabular-nums font-medium text-card-foreground">{analysis.offPeakBatteryCharge.toFixed(2)} kWh</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-card-foreground">{analysis.offPeakBatteryCharge > 0.001 ? analysis.offPeakBatteryCharge.toFixed(2) : "--"}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-card-foreground">{analysis.peakBatteryCharge > 0.001 ? analysis.peakBatteryCharge.toFixed(2) : "--"}</td>
+                    <td className="px-3 py-2 text-right tabular-nums font-medium text-card-foreground">{(analysis.offPeakBatteryCharge + analysis.peakBatteryCharge).toFixed(2)} kWh</td>
                   </tr>
                   <tr>
                     <td className="flex items-center gap-1.5 px-3 py-2 font-medium text-card-foreground"><Battery className="h-3.5 w-3.5 text-primary" /> Batt Discharge</td>
-                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">--</td>
-                    <td className="px-3 py-2 text-right tabular-nums text-emerald-600 dark:text-emerald-400">{analysis.peakBatteryDischarge.toFixed(2)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums font-medium text-emerald-600 dark:text-emerald-400">{analysis.peakBatteryDischarge.toFixed(2)} kWh</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-card-foreground">{analysis.offPeakBatteryDischarge > 0.001 ? analysis.offPeakBatteryDischarge.toFixed(2) : "--"}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-emerald-600 dark:text-emerald-400">{analysis.peakBatteryDischarge > 0.001 ? analysis.peakBatteryDischarge.toFixed(2) : "--"}</td>
+                    <td className="px-3 py-2 text-right tabular-nums font-medium text-emerald-600 dark:text-emerald-400">{(analysis.offPeakBatteryDischarge + analysis.peakBatteryDischarge).toFixed(2)} kWh</td>
                   </tr>
                   </>
                   )}

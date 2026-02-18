@@ -77,9 +77,10 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
 
       const raw = entry as Record<string, unknown>
       const sharedPec = entry.pacPec
+      const unitFallback = entry.pacStr // "W" in most responses – use as fallback when metric has no Str
       const gridPec = (raw.psumPec ?? raw.psumCalPec ?? raw.pSumPec ?? sharedPec) as string | undefined
-      const gridPower = toKW(entry.pSum, entry.pSumStr, gridPec)
-      const loadPower = toKW(entry.familyLoadPower, entry.familyLoadPowerStr, ((raw.familyLoadPowerPec ?? sharedPec) as string | undefined))
+      const gridPower = toKW(entry.pSum, entry.pSumStr || unitFallback, gridPec)
+      const loadPower = toKW(entry.familyLoadPower, entry.familyLoadPowerStr || unitFallback, ((raw.familyLoadPowerPec ?? sharedPec) as string | undefined))
 
       // Solis: negative pSum = grid import, positive = grid export
       const gi = gridPower < 0 ? Math.abs(gridPower) * intervalHours : 0
@@ -108,7 +109,8 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
     return { gridCost, exportRev, fullGridCost }
   }, [tariffGroups, hasRates, exportRate])
 
-  const { data: dayData } = useInverterDay(id, sn, today, "8")
+  const tz = useMemo(() => String(Math.round(-new Date().getTimezoneOffset() / 60)), [])
+  const { data: dayData } = useInverterDay(id, sn, today, tz)
   const { data: monthData } = useInverterMonth(id, sn, thisMonth)
   const { data: yearData } = useInverterYear(id, sn, thisYear)
 
