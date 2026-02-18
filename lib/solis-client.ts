@@ -322,6 +322,44 @@ export function toKWh(
   return value
 }
 
+type GridPowerLike = {
+  pSum?: number
+  pSumStr?: string
+  psum?: number
+  psumStr?: string
+  psumCal?: number
+  psumCalStr?: string
+  pSumCal?: number
+  pSumCalStr?: string
+}
+
+export function pickGridPower(entry: GridPowerLike): { value: number; unit?: string } {
+  const candidates = [
+    { value: entry.pSum, unit: entry.pSumStr },
+    { value: entry.psum, unit: entry.psumStr },
+    { value: entry.psumCal, unit: entry.psumCalStr },
+    { value: entry.pSumCal, unit: entry.pSumCalStr },
+  ]
+  const pick =
+    candidates.find((c) => typeof c.value === "number" && Math.abs(c.value || 0) > 0) ||
+    candidates.find((c) => typeof c.value === "number") ||
+    { value: 0, unit: undefined }
+  return { value: pick.value || 0, unit: pick.unit }
+}
+
+export function pickGridPowerPec(
+  entry: Record<string, unknown>,
+  fallback?: string
+): string | undefined {
+  const raw = entry as {
+    pSumPec?: string
+    psumPec?: string
+    psumCalPec?: string
+    pSumCalPec?: string
+  }
+  return raw.psumPec ?? raw.psumCalPec ?? raw.pSumPec ?? raw.pSumCalPec ?? fallback
+}
+
 // ---------- Generic fetcher ----------
 
 async function solisFetcher<T = unknown>([endpoint, body]: [

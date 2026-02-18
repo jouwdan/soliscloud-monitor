@@ -22,6 +22,8 @@ import {
   getTariffForHour,
   getCurrencySettings,
   getExportPrice,
+  pickGridPower,
+  pickGridPowerPec,
   toKW,
   toKWh,
   type InverterDayEntry,
@@ -144,8 +146,9 @@ function analyzeLoadShifting(
     const raw = entry as Record<string, unknown>
     const sharedPec = entry.pacPec
     const unitFallback = entry.pacStr // "W" in most responses – use as fallback when metric has no Str
-    const gridPec = (raw.psumPec ?? raw.psumCalPec ?? raw.pSumPec ?? sharedPec) as string | undefined
-    const gridPower = toKW(entry.pSum, entry.pSumStr || unitFallback, gridPec)
+    const gridPec = pickGridPowerPec(raw, sharedPec)
+    const gridPick = pickGridPower(entry)
+    const gridPower = toKW(gridPick.value, gridPick.unit || unitFallback, gridPec)
     const battPower = toKW(entry.batteryPower, entry.batteryPowerStr || unitFallback, (entry.batteryPowerPec ?? sharedPec) as string | undefined)
     const solarPower = toKW(entry.pac, entry.pacStr, entry.pacPec)
     const loadPower = toKW(entry.familyLoadPower, entry.familyLoadPowerStr || unitFallback, (entry.familyLoadPowerPec ?? sharedPec) as string | undefined)
