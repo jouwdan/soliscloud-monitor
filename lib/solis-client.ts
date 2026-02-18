@@ -65,6 +65,7 @@ export interface TariffGroup {
   rate: number // currency/kWh
   color: string // tailwind-compatible colour for UI
   slots?: TariffTimeSlot[]
+  isOffPeak?: boolean
 }
 
 /** Get the effective time slots for a tariff group (handles legacy single-slot format) */
@@ -86,7 +87,7 @@ const STORAGE_KEY_OFFPEAK = "solis_offpeak_settings"
 const STORAGE_KEY_TARIFF_GROUPS = "solis_tariff_groups"
 
 const DEFAULT_TARIFF_GROUPS: TariffGroup[] = [
-  { id: "off-peak", name: "Off-Peak", startHour: 23, endHour: 6, rate: 0, color: "indigo" },
+  { id: "off-peak", name: "Off-Peak", startHour: 23, endHour: 6, rate: 0, color: "indigo", isOffPeak: true },
   { id: "standard", name: "Standard", startHour: 6, endHour: 7, rate: 0, color: "sky" },
   { id: "peak", name: "Peak", startHour: 7, endHour: 10, rate: 0, color: "amber" },
   { id: "standard-mid", name: "Standard", startHour: 10, endHour: 18, rate: 0, color: "sky" },
@@ -107,7 +108,9 @@ export function getOffPeakSettings(): OffPeakSettings {
     const raw = localStorage.getItem(STORAGE_KEY_OFFPEAK)
     if (raw) {
       const parsed = JSON.parse(raw)
-      return { ...defaults, ...parsed }
+      const merged = { ...defaults, ...parsed }
+      if (merged.tariffGroups) merged.tariffGroups = migrateOffPeakFlag(merged.tariffGroups)
+      return merged
     }
     // migrate old keys
     const start = localStorage.getItem("solis_offpeak_start")
@@ -122,13 +125,21 @@ export function saveOffPeakSettings(s: OffPeakSettings) {
   localStorage.setItem(STORAGE_KEY_OFFPEAK, JSON.stringify(s))
 }
 
+/** Migrate legacy groups that lack the `isOffPeak` flag by inferring from the name */
+function migrateOffPeakFlag(groups: TariffGroup[]): TariffGroup[] {
+  return groups.map((g) => ({
+    ...g,
+    isOffPeak: g.isOffPeak ?? /off.?peak|night/i.test(g.name),
+  }))
+}
+
 export function getTariffGroups(): TariffGroup[] {
   if (typeof window === "undefined") return DEFAULT_TARIFF_GROUPS
   try {
     const raw = localStorage.getItem(STORAGE_KEY_TARIFF_GROUPS)
     if (raw) {
       const parsed = JSON.parse(raw)
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed
+      if (Array.isArray(parsed) && parsed.length > 0) return migrateOffPeakFlag(parsed)
     }
   } catch { /* ignore */ }
   return DEFAULT_TARIFF_GROUPS
@@ -139,11 +150,10 @@ export function saveTariffGroups(groups: TariffGroup[]) {
 }
 
 export function isOffPeakHour(hour: number, settings: OffPeakSettings): boolean {
-  // Find the tariff group for this hour from the settings' own tariff groups
-  // If we have tariff groups, check if the matching group name contains "off-peak" (case insensitive)
+  // Check if the tariff group for this hour is marked as off-peak
   if (settings.tariffGroups && settings.tariffGroups.length > 0) {
     const matched = getTariffForHour(hour, settings.tariffGroups)
-    if (matched) return matched.name.toLowerCase().includes("off-peak") || matched.name.toLowerCase().includes("off peak")
+    if (matched) return matched.isOffPeak === true
   }
   // Legacy fallback
   if (settings.startHour > settings.endHour) {
