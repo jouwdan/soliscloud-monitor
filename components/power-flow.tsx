@@ -179,6 +179,8 @@ export function PowerFlow({ detail }: { detail: InverterDetail }) {
   }
   const hasStrings = pvStrings.length > 0
 
+  console.log("[v0] PowerFlow detail.pSum:", detail.pSum, "familyLoadPower:", detail.familyLoadPower, "pac:", detail.pac, "batteryPower:", detail.batteryPower, "pSumStr:", detail.pSumStr)
+
   /* Whether each flow is active (power > small threshold)
      Solis convention: negative pSum = importing from grid, positive = exporting */
   const solarActive = solarPower > 0.01
