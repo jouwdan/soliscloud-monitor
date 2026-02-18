@@ -5,22 +5,15 @@ import Link from "next/link"
 import { format } from "date-fns"
 import {
   ArrowLeft,
-  Zap,
   Sun,
-  BatteryCharging,
   Battery,
-  ArrowDownToLine,
-  ArrowUpFromLine,
-  Home,
   Thermometer,
   Clock,
   AlertTriangle,
   Info,
-  Leaf,
-  PlugZap,
   ShieldCheck,
 } from "lucide-react"
-import { useInverterDetail, useInverterDay, useInverterMonth, useInverterYear, getCurrencySettings, getTariffGroups, getExportPrice, toKWh, getRateForHour, getTariffForHour, toKW, type InverterDayEntry } from "@/lib/solis-client"
+import { useInverterDetail, useInverterDay, useInverterMonth, useInverterYear, getCurrencySettings, getTariffGroups, getExportPrice, toKWh, getTariffForHour, toKW, type InverterDayEntry } from "@/lib/solis-client"
 import { PowerFlow } from "@/components/power-flow"
 import { LoadShiftingCard } from "@/components/load-shifting-card"
 import { StatusBadge } from "@/components/status-badge"
@@ -28,7 +21,7 @@ import { PowerChart } from "@/components/power-chart"
 import { EnergyBarChart } from "@/components/energy-bar-chart"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 
 interface InverterDetailViewProps {
@@ -38,10 +31,13 @@ interface InverterDetailViewProps {
 
 export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
   const { data: detail, error, isLoading } = useInverterDetail(id, sn)
-  const [chartTab, setChartTab] = useState("month")
+  const [powerTab, setPowerTab] = useState("today")
 
   const today = format(new Date(), "yyyy-MM-dd")
+  const yesterday = format(new Date(Date.now() - 86400000), "yyyy-MM-dd")
   const thisMonth = format(new Date(), "yyyy-MM")
+  const prevMonth = format(new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1), "yyyy-MM")
+  const dayOfMonth = new Date().getDate()
   const thisYear = format(new Date(), "yyyy")
 
   const currency = useMemo(() => getCurrencySettings(), [])
@@ -77,9 +73,10 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
 
       const raw = entry as Record<string, unknown>
       const sharedPec = entry.pacPec
+      const unitFallback = entry.pacStr // "W" in most responses – use as fallback when metric has no Str
       const gridPec = (raw.psumPec ?? raw.psumCalPec ?? raw.pSumPec ?? sharedPec) as string | undefined
-      const gridPower = toKW(entry.pSum, entry.pSumStr, gridPec)
-      const loadPower = toKW(entry.familyLoadPower, entry.familyLoadPowerStr, ((raw.familyLoadPowerPec ?? sharedPec) as string | undefined))
+      const gridPower = toKW(entry.pSum, entry.pSumStr || unitFallback, gridPec)
+      const loadPower = toKW(entry.familyLoadPower, entry.familyLoadPowerStr || unitFallback, ((raw.familyLoadPowerPec ?? sharedPec) as string | undefined))
 
       // Solis: negative pSum = grid import, positive = grid export
       const gi = gridPower < 0 ? Math.abs(gridPower) * intervalHours : 0
@@ -108,9 +105,26 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
     return { gridCost, exportRev, fullGridCost }
   }, [tariffGroups, hasRates, exportRate])
 
-  const { data: dayData } = useInverterDay(id, sn, today, "8")
+  const tz = useMemo(() => String(Math.round(-new Date().getTimezoneOffset() / 60)), [])
+  const { data: dayData } = useInverterDay(id, sn, today, tz)
+  const { data: yesterdayData } = useInverterDay(
+    powerTab === "yesterday" ? id : "",
+    sn,
+    yesterday,
+    tz,
+  )
   const { data: monthData } = useInverterMonth(id, sn, thisMonth)
+  // Fetch previous month when "7 Days" tab is active and we're in the first 7 days
+  const needsPrevMonth = powerTab === "week" && dayOfMonth < 7
+  const { data: prevMonthData } = useInverterMonth(needsPrevMonth ? id : "", sn, prevMonth)
   const { data: yearData } = useInverterYear(id, sn, thisYear)
+  // Lifetime tab: fetch up to 4 previous years (conditional on tab)
+  const isLifetime = powerTab === "lifetime"
+  const yr = parseInt(thisYear, 10)
+  const { data: yearDataM1 } = useInverterYear(isLifetime ? id : "", sn, String(yr - 1))
+  const { data: yearDataM2 } = useInverterYear(isLifetime ? id : "", sn, String(yr - 2))
+  const { data: yearDataM3 } = useInverterYear(isLifetime ? id : "", sn, String(yr - 3))
+  const { data: yearDataM4 } = useInverterYear(isLifetime ? id : "", sn, String(yr - 4))
 
   if (isLoading) {
     return (
@@ -191,7 +205,7 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
             </div>
             <div>
               <span className="text-muted-foreground">Type</span>
-              <p className="font-medium text-card-foreground">{detail.type === 2 ? "Storage" : "Grid-tied"}</p>
+              <p className="font-medium text-card-foreground">{detail.type === 2 || detail.batteryCapacitySoc > 0 ? "Storage" : "Grid-tied"}</p>
             </div>
             <div>
               <span className="text-muted-foreground">Firmware</span>
@@ -294,6 +308,20 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
                         <p className="mt-1 text-[9px] text-muted-foreground">of production used directly</p>
                       </div>
                     </div>
+                    {detail.homeLoadYesterdayEnergy > 0 && (() => {
+                      const yesterdayLoad = toKWh(detail.homeLoadYesterdayEnergy, detail.homeLoadYesterdayEnergyStr)
+                      const delta = consumed - yesterdayLoad
+                      return (
+                        <div className="mt-2 pt-2 border-t text-center text-xs text-muted-foreground">
+                          Yesterday&apos;s load: {yesterdayLoad.toFixed(1)} kWh
+                          {consumed > 0.01 && (
+                            <span className={delta > 0 ? "text-red-400 ml-1" : "text-emerald-400 ml-1"}>
+                              ({delta > 0 ? "+" : ""}{delta.toFixed(1)} kWh today)
+                            </span>
+                          )}
+                        </div>
+                      )
+                    })()}
                   </CardContent>
                 </Card>
 
@@ -386,154 +414,247 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
         </div>
       </div>
 
-      {/* Today's Power Chart — full width */}
-      <Card>
-        <CardHeader className="pb-1">
-          <CardTitle className="text-sm font-semibold text-card-foreground">Today{"'"}s Power</CardTitle>
-        </CardHeader>
-        <CardContent className="pb-4">
-          <PowerChart data={dayData || []} />
-        </CardContent>
-      </Card>
-
-      {/* Energy Flow Breakdown */}
-      {(() => {
-        // Helper: normalise to kWh and format with appropriate unit for display
-        const e = (val: number | undefined, unitStr: string | undefined) => {
-          const kwh = toKWh(val, unitStr)
-          if (kwh >= 1000) return { text: (kwh / 1000).toFixed(2), unit: "MWh" }
-          return { text: kwh.toFixed(1), unit: "kWh" }
-        }
-        // Compute week totals from last 7 days of monthData (already in kWh)
-        const sorted7 = [...(monthData || [])].sort((a, b) => (b.date || 0) - (a.date || 0)).slice(0, 7)
-        const wk = {
-          production: sorted7.reduce((s, d) => s + (d.energy || 0), 0),
-          consumption: sorted7.reduce((s, d) => s + (d.homeLoadEnergy || 0), 0),
-          gridImport: sorted7.reduce((s, d) => s + (d.gridPurchasedEnergy || 0), 0),
-          gridExport: sorted7.reduce((s, d) => s + (d.gridSellEnergy || 0), 0),
-          battCharge: sorted7.reduce((s, d) => s + (d.batteryChargeEnergy || 0), 0),
-          battDischarge: sorted7.reduce((s, d) => s + (d.batteryDischargeEnergy || 0), 0),
-        }
-        const fmtWk = (v: number) => v >= 1000 ? { text: (v / 1000).toFixed(2), unit: "MWh" } : { text: v.toFixed(1), unit: "kWh" }
-        const thHidden = "hidden px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground"
-        const tdHidden = "hidden px-3 py-2.5 text-right tabular-nums text-card-foreground"
-        const ECell = ({ v, u, cls }: { v: number | undefined; u: string | undefined; cls: string }) => {
-          const f = e(v, u)
-          return <td className={cls}>{f.text} <span className="text-muted-foreground">{f.unit}</span></td>
-        }
-        const WkCell = ({ v, cls }: { v: number; cls: string }) => {
-          const f = fmtWk(v)
-          return <td className={cls}>{f.text} <span className="text-muted-foreground">{f.unit}</span></td>
-        }
-        return (
+      {/* Power Chart — full width with period tabs */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base font-semibold text-card-foreground">
-            <Leaf className="h-4 w-4 text-emerald-500" />
-            Energy Flow
-          </CardTitle>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <CardTitle className="text-sm font-semibold text-card-foreground">Power</CardTitle>
+            <Tabs value={powerTab} onValueChange={setPowerTab}>
+              <TabsList className="h-8">
+                <TabsTrigger value="today" className="text-xs px-2.5">Today</TabsTrigger>
+                <TabsTrigger value="yesterday" className="text-xs px-2.5">Yesterday</TabsTrigger>
+                <TabsTrigger value="week" className="text-xs px-2.5">7 Days</TabsTrigger>
+                <TabsTrigger value="month" className="text-xs px-2.5">Month</TabsTrigger>
+                <TabsTrigger value="year" className="text-xs px-2.5">Year</TabsTrigger>
+                <TabsTrigger value="lifetime" className="text-xs px-2.5">Lifetime</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </div>
         </CardHeader>
-        <CardContent>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-muted/50">
-                    <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Metric</th>
-                    <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">Today</th>
-                    <th className={`${thHidden} sm:table-cell`}>Week</th>
-                    <th className={`${thHidden} sm:table-cell`}>Month</th>
-                    <th className={`${thHidden} md:table-cell`}>Year</th>
-                    <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">Total</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  <tr>
-                    <td className="flex items-center gap-2 px-3 py-2.5 font-medium text-card-foreground">
-                      <Sun className="h-3.5 w-3.5 text-primary" /> Production
-                    </td>
-                    <ECell v={detail.eToday} u={detail.eTodayStr} cls="px-3 py-2.5 text-right tabular-nums text-card-foreground" />
-                    <WkCell v={wk.production} cls={`${tdHidden} sm:table-cell`} />
-                    <ECell v={detail.eMonth} u={detail.eMonthStr} cls={`${tdHidden} sm:table-cell`} />
-                    <ECell v={detail.eYear} u={detail.eYearStr} cls={`${tdHidden} md:table-cell`} />
-                    <ECell v={detail.eTotal} u={detail.eTotalStr} cls="px-3 py-2.5 text-right tabular-nums text-card-foreground" />
-                  </tr>
-                  <tr>
-                    <td className="flex items-center gap-2 px-3 py-2.5 font-medium text-card-foreground">
-                      <Home className="h-3.5 w-3.5 text-muted-foreground" /> Consumption
-                    </td>
-                    <ECell v={detail.homeLoadTodayEnergy} u={detail.homeLoadTodayEnergyStr} cls="px-3 py-2.5 text-right tabular-nums text-card-foreground" />
-                    <WkCell v={wk.consumption} cls={`${tdHidden} sm:table-cell`} />
-                    <ECell v={detail.homeLoadMonthEnergy} u={detail.homeLoadMonthEnergyStr || "kWh"} cls={`${tdHidden} sm:table-cell`} />
-                    <ECell v={detail.homeLoadYearEnergy} u={detail.homeLoadYearEnergyStr || "kWh"} cls={`${tdHidden} md:table-cell`} />
-                    <ECell v={detail.homeLoadTotalEnergy} u={detail.homeLoadTotalEnergyStr} cls="px-3 py-2.5 text-right tabular-nums text-card-foreground" />
-                  </tr>
-                  <tr>
-                    <td className="flex items-center gap-2 px-3 py-2.5 font-medium text-card-foreground">
-                      <ArrowDownToLine className="h-3.5 w-3.5 text-red-500" /> Grid Import
-                    </td>
-                    <ECell v={detail.gridPurchasedTodayEnergy} u={detail.gridPurchasedTodayEnergyStr} cls="px-3 py-2.5 text-right tabular-nums text-card-foreground" />
-                    <WkCell v={wk.gridImport} cls={`${tdHidden} sm:table-cell`} />
-                    <ECell v={detail.gridPurchasedMonthEnergy} u={detail.gridPurchasedMonthEnergyStr || "kWh"} cls={`${tdHidden} sm:table-cell`} />
-                    <ECell v={detail.gridPurchasedYearEnergy} u={detail.gridPurchasedYearEnergyStr || "kWh"} cls={`${tdHidden} md:table-cell`} />
-                    <ECell v={detail.gridPurchasedTotalEnergy} u={detail.gridPurchasedTotalEnergyStr} cls="px-3 py-2.5 text-right tabular-nums text-card-foreground" />
-                  </tr>
-                  <tr>
-                    <td className="flex items-center gap-2 px-3 py-2.5 font-medium text-card-foreground">
-                      <ArrowUpFromLine className="h-3.5 w-3.5 text-emerald-500" /> Grid Export
-                    </td>
-                    <ECell v={detail.gridSellTodayEnergy} u={detail.gridSellTodayEnergyStr} cls="px-3 py-2.5 text-right tabular-nums text-card-foreground" />
-                    <WkCell v={wk.gridExport} cls={`${tdHidden} sm:table-cell`} />
-                    <ECell v={detail.gridSellMonthEnergy} u={detail.gridSellMonthEnergyStr || "kWh"} cls={`${tdHidden} sm:table-cell`} />
-                    <ECell v={detail.gridSellYearEnergy} u={detail.gridSellYearEnergyStr || "kWh"} cls={`${tdHidden} md:table-cell`} />
-                    <ECell v={detail.gridSellTotalEnergy} u={detail.gridSellTotalEnergyStr} cls="px-3 py-2.5 text-right tabular-nums text-card-foreground" />
-                  </tr>
-                  {(detail.batteryTodayChargeEnergy || detail.batteryTotalChargeEnergy) ? (
-                  <tr>
-                    <td className="flex items-center gap-2 px-3 py-2.5 font-medium text-card-foreground">
-                      <BatteryCharging className="h-3.5 w-3.5 text-primary" /> Battery Charge
-                    </td>
-                    <ECell v={detail.batteryTodayChargeEnergy} u={detail.batteryTodayChargeEnergyStr} cls="px-3 py-2.5 text-right tabular-nums text-card-foreground" />
-                    <WkCell v={wk.battCharge} cls={`${tdHidden} sm:table-cell`} />
-                    <ECell v={detail.batteryMonthChargeEnergy} u={detail.batteryMonthChargeEnergyStr || "kWh"} cls={`${tdHidden} sm:table-cell`} />
-                    <ECell v={detail.batteryYearChargeEnergy} u={detail.batteryYearChargeEnergyStr || "kWh"} cls={`${tdHidden} md:table-cell`} />
-                    <ECell v={detail.batteryTotalChargeEnergy} u={detail.batteryTotalChargeEnergyStr} cls="px-3 py-2.5 text-right tabular-nums text-card-foreground" />
-                  </tr>
-                  ) : null}
-                  {(detail.batteryTodayDischargeEnergy || detail.batteryTotalDischargeEnergy) ? (
-                  <tr>
-                    <td className="flex items-center gap-2 px-3 py-2.5 font-medium text-card-foreground">
-                      <Battery className="h-3.5 w-3.5 text-primary" /> Battery Discharge
-                    </td>
-                    <ECell v={detail.batteryTodayDischargeEnergy} u={detail.batteryTodayDischargeEnergyStr} cls="px-3 py-2.5 text-right tabular-nums text-card-foreground" />
-                    <WkCell v={wk.battDischarge} cls={`${tdHidden} sm:table-cell`} />
-                    <ECell v={detail.batteryMonthDischargeEnergy} u={detail.batteryMonthDischargeEnergyStr || "kWh"} cls={`${tdHidden} sm:table-cell`} />
-                    <ECell v={detail.batteryYearDischargeEnergy} u={detail.batteryYearDischargeEnergyStr || "kWh"} cls={`${tdHidden} md:table-cell`} />
-                    <ECell v={detail.batteryTotalDischargeEnergy} u={detail.batteryTotalDischargeEnergyStr} cls="px-3 py-2.5 text-right tabular-nums text-card-foreground" />
-                  </tr>
-                  ) : null}
-                  {(detail.backupTodayEnergy || detail.backupTotalEnergy) ? (
-                    <tr>
-                      <td className="flex items-center gap-2 px-3 py-2.5 font-medium text-card-foreground">
-                        <PlugZap className="h-3.5 w-3.5 text-muted-foreground" /> Backup Load
-                      </td>
-                      <ECell v={detail.backupTodayEnergy} u={detail.backupTodayEnergyStr} cls="px-3 py-2.5 text-right tabular-nums text-card-foreground" />
-                      <td className={`${tdHidden} sm:table-cell`}>--</td>
-                      <td className={`${tdHidden} sm:table-cell`}>--</td>
-                      <td className={`${tdHidden} md:table-cell`}>--</td>
-                      <ECell v={detail.backupTotalEnergy} u={detail.backupTotalEnergyStr} cls="px-3 py-2.5 text-right tabular-nums text-card-foreground" />
-                    </tr>
-                  ) : null}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
+        <CardContent className="pb-4">
+          {powerTab === "today" && <PowerChart data={dayData || []} />}
+          {powerTab === "yesterday" && <PowerChart data={yesterdayData || []} />}
+          {powerTab === "week" && (() => {
+            // Merge previous month + current month so the 7-day window spans month boundaries
+            const combined = [...(prevMonthData || []), ...(monthData || [])]
+              .sort((a, b) => (a.date || 0) - (b.date || 0))
+              .slice(-7)
+            return (
+              <EnergyBarChart
+                data={combined.map((d) => ({
+                  label: d.dateStr
+                    ? new Date(d.dateStr + "T00:00:00").toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })
+                    : "",
+                  energy: d.energy,
+                  gridSell: d.gridSellEnergy,
+                  gridPurchased: d.gridPurchasedEnergy,
+                  homeLoad: d.homeLoadEnergy,
+                  batteryCharge: d.batteryChargeEnergy,
+                  batteryDischarge: d.batteryDischargeEnergy,
+                }))}
+                xLabel="Day"
+              />
+            )
+          })()}
+          {powerTab === "month" && (
+            <EnergyBarChart
+              data={(monthData || []).map((d) => ({
+                label: d.dateStr?.split("-")[2] || "",
+                energy: d.energy,
+                gridSell: d.gridSellEnergy,
+                gridPurchased: d.gridPurchasedEnergy,
+                homeLoad: d.homeLoadEnergy,
+                batteryCharge: d.batteryChargeEnergy,
+                batteryDischarge: d.batteryDischargeEnergy,
+              }))}
+              xLabel="Day"
+            />
+          )}
+          {powerTab === "year" && (
+            <EnergyBarChart
+              data={(yearData || []).map((d) => {
+                const monthNum = d.dateStr?.split("-")[1] || ""
+                const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+                const label = monthNames[parseInt(monthNum, 10) - 1] || monthNum
+                return {
+                  label,
+                  energy: d.energy,
+                  gridSell: d.gridSellEnergy,
+                  gridPurchased: d.gridPurchasedEnergy,
+                  homeLoad: d.homeLoadEnergy,
+                  batteryCharge: d.batteryChargeEnergy,
+                  batteryDischarge: d.batteryDischargeEnergy,
+                }
+              })}
+              xLabel="Month"
+            />
+          )}
+          {powerTab === "lifetime" && (() => {
+            // Aggregate each year's monthly entries into yearly totals
+            const allYears: [number, typeof yearData][] = [
+              [yr - 4, yearDataM4],
+              [yr - 3, yearDataM3],
+              [yr - 2, yearDataM2],
+              [yr - 1, yearDataM1],
+              [yr, yearData],
+            ]
+            const yearlyBars = allYears
+              .filter(([, d]) => d && d.length > 0)
+              .map(([y, d]) => ({
+                label: String(y),
+                energy: d!.reduce((s, m) => s + (m.energy || 0), 0),
+                homeLoad: d!.reduce((s, m) => s + (m.homeLoadEnergy || 0), 0),
+                gridPurchased: d!.reduce((s, m) => s + (m.gridPurchasedEnergy || 0), 0),
+                gridSell: d!.reduce((s, m) => s + (m.gridSellEnergy || 0), 0),
+                batteryCharge: d!.reduce((s, m) => s + (m.batteryChargeEnergy || 0), 0),
+                batteryDischarge: d!.reduce((s, m) => s + (m.batteryDischargeEnergy || 0), 0),
+              }))
+            const firstYear = yearlyBars.length > 0 ? yearlyBars[0].label : thisYear
+
+            // Lifetime totals from detail endpoint
+            const fmtE = (v: number | undefined, u: string | undefined) => {
+              const kwh = toKWh(v, u)
+              if (kwh >= 1000) return `${(kwh / 1000).toFixed(1)} MWh`
+              return `${kwh.toFixed(1)} kWh`
+            }
+
+            return (
+              <div className="space-y-3">
+                {/* Summary stats */}
+                <div className="grid grid-cols-3 gap-3 text-center text-xs sm:grid-cols-6">
+                  <div>
+                    <p className="text-muted-foreground">Generation</p>
+                    <p className="font-medium tabular-nums text-card-foreground">{fmtE(detail.eTotal, detail.eTotalStr)}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Consumption</p>
+                    <p className="font-medium tabular-nums text-card-foreground">{fmtE(detail.homeLoadTotalEnergy, detail.homeLoadTotalEnergyStr)}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Grid Import</p>
+                    <p className="font-medium tabular-nums text-card-foreground">{fmtE(detail.gridPurchasedTotalEnergy, detail.gridPurchasedTotalEnergyStr)}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Grid Export</p>
+                    <p className="font-medium tabular-nums text-card-foreground">{fmtE(detail.gridSellTotalEnergy, detail.gridSellTotalEnergyStr)}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Batt Charge</p>
+                    <p className="font-medium tabular-nums text-card-foreground">{fmtE(detail.batteryTotalChargeEnergy, detail.batteryTotalChargeEnergyStr)}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Batt Discharge</p>
+                    <p className="font-medium tabular-nums text-card-foreground">{fmtE(detail.batteryTotalDischargeEnergy, detail.batteryTotalDischargeEnergyStr)}</p>
+                  </div>
+                </div>
+                <p className="text-center text-[10px] text-muted-foreground">
+                  {firstYear} &ndash; {thisYear} &middot; {detail.fullHour?.toFixed(0) || 0} operating hours
+                </p>
+                {/* Yearly bar chart */}
+                {yearlyBars.length > 0 && (
+                  <EnergyBarChart data={yearlyBars} xLabel="Year" />
+                )}
+              </div>
+            )
+          })()}
+        </CardContent>
       </Card>
-        )
-      })()}
 
       {/* Load Shifting Analysis */}
       {dayData && dayData.length > 0 && (
         <LoadShiftingCard detail={detail} dayData={dayData} monthData={monthData} yearData={yearData} />
+      )}
+
+      {/* Battery Details — show when inverter is storage type or has battery data */}
+      {(detail.type === 2 || detail.batteryCapacitySoc > 0 || detail.batteryTodayChargeEnergy > 0) && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base font-semibold text-card-foreground">
+              <Battery className="h-4 w-4 text-muted-foreground" />
+              Battery Details
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
+              <div>
+                <p className="text-xs text-muted-foreground">SOC</p>
+                <div className="mt-1 flex items-center gap-2">
+                  <div className="h-2 flex-1 rounded-full bg-muted">
+                    <div
+                      className="h-2 rounded-full bg-primary"
+                      style={{ width: `${detail.batteryCapacitySoc || 0}%` }}
+                    />
+                  </div>
+                  <span className="font-mono text-xs font-medium tabular-nums text-card-foreground">
+                    {detail.batteryCapacitySoc?.toFixed(0) || 0}%
+                  </span>
+                </div>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">SOH</p>
+                <p className="font-medium tabular-nums text-card-foreground">
+                  {detail.batteryHealthSoh?.toFixed(0) || 0}%
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Charged Today</p>
+                <p className="font-medium tabular-nums text-card-foreground">
+                  {detail.batteryTodayChargeEnergy?.toFixed(1) || 0} {detail.batteryTodayChargeEnergyStr || "kWh"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Discharged Today</p>
+                <p className="font-medium tabular-nums text-card-foreground">
+                  {detail.batteryTodayDischargeEnergy?.toFixed(1) || 0} {detail.batteryTodayDischargeEnergyStr || "kWh"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Total Charged</p>
+                <p className="font-medium tabular-nums text-card-foreground">
+                  {detail.batteryTotalChargeEnergy?.toFixed(1) || 0} {detail.batteryTotalChargeEnergyStr || "kWh"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Total Discharged</p>
+                <p className="font-medium tabular-nums text-card-foreground">
+                  {detail.batteryTotalDischargeEnergy?.toFixed(1) || 0} {detail.batteryTotalDischargeEnergyStr || "kWh"}
+                </p>
+              </div>
+              {(() => {
+                const ext = detail as Record<string, unknown>
+                const dischFloor = ext.socDischargeSet as number | undefined
+                const epsReserve = ext.epsDDepth as number | undefined
+                const backupV = ext.bypassAcVoltage as number | undefined
+                const showBackup = ext.backupShow === 1
+                if (!dischFloor && !epsReserve && !showBackup) return null
+                return (
+                  <>
+                    {dischFloor != null && dischFloor > 0 && (
+                      <div>
+                        <p className="text-xs text-muted-foreground">Min SOC (Grid)</p>
+                        <p className="font-medium tabular-nums text-card-foreground">{dischFloor}%</p>
+                        <p className="text-[9px] text-muted-foreground">daily discharge floor</p>
+                      </div>
+                    )}
+                    {showBackup && epsReserve != null && epsReserve > 0 && (
+                      <div>
+                        <p className="text-xs text-muted-foreground">Min SOC (Backup)</p>
+                        <p className="font-medium tabular-nums text-card-foreground">{epsReserve}%</p>
+                        <p className="text-[9px] text-muted-foreground">reserve during outage</p>
+                      </div>
+                    )}
+                    {showBackup && backupV != null && backupV > 0 && (
+                      <div>
+                        <p className="text-xs text-muted-foreground">Backup Voltage</p>
+                        <p className="font-medium tabular-nums text-card-foreground">{backupV.toFixed(1)} V</p>
+                      </div>
+                    )}
+                  </>
+                )
+              })()}
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {/* DC/AC Readings */}
@@ -596,117 +717,75 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
                 </div>
               ))}
             </div>
-            <div className="mt-3 flex items-center gap-4 text-xs text-muted-foreground">
+            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
               <span className="flex items-center gap-1">
                 <Thermometer className="h-3 w-3" />
                 Temp: {detail.inverterTemperature || 0}&deg;C
               </span>
               <span>Freq: {detail.fac || 0} {detail.facStr || "Hz"}</span>
               <span>Full Hours: {detail.fullHour?.toFixed(1) || 0}h</span>
+              {detail.apparentPower > 0 && (() => {
+                const pacKW = toKW(detail.pac, detail.pacStr)
+                const appKVA = toKW(detail.apparentPower, detail.apparentPowerStr)
+                const pf = appKVA > 0 ? Math.abs(pacKW) / appKVA : 0
+                return (
+                  <>
+                    <span>PF: {Math.min(1, pf).toFixed(2)}</span>
+                    <span>Apparent: {detail.apparentPower} {detail.apparentPowerStr || "kVA"}</span>
+                  </>
+                )
+              })()}
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Energy History Charts */}
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <CardTitle className="text-base font-semibold text-card-foreground">
-              Energy History
-            </CardTitle>
-            <Tabs value={chartTab} onValueChange={setChartTab}>
-              <TabsList className="h-8">
-                <TabsTrigger value="month" className="text-xs px-3">
-                  This Month
-                </TabsTrigger>
-                <TabsTrigger value="year" className="text-xs px-3">
-                  This Year
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {chartTab === "month" && (
-            <EnergyBarChart
-              data={(monthData || []).map((d) => ({
-                label: d.dateStr?.split("-")[2] || "",
-                energy: d.energy,
-                gridSell: d.gridSellEnergy,
-                gridPurchased: d.gridPurchasedEnergy,
-              }))}
-              xLabel="Day"
-            />
-          )}
-          {chartTab === "year" && (
-            <EnergyBarChart
-              data={(yearData || []).map((d) => ({
-                label: d.dateStr?.split("-")[1] || "",
-                energy: d.energy,
-                gridSell: d.gridSellEnergy,
-                gridPurchased: d.gridPurchasedEnergy,
-              }))}
-              xLabel="Month"
-            />
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Battery Details */}
-      {detail.type === 2 && (
+      {/* Generator — only if supported */}
+      {((detail as Record<string, unknown>).generatorSupport === 1 || detail.generatorTotalEnergy > 0) && (
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base font-semibold text-card-foreground">
-              <Battery className="h-4 w-4 text-muted-foreground" />
-              Battery Details
+            <CardTitle className="flex items-center gap-2 text-sm font-semibold text-card-foreground">
+              <Info className="h-4 w-4 text-muted-foreground" />
+              Generator
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
+            <div className="grid grid-cols-3 gap-4 text-sm text-center">
               <div>
-                <p className="text-xs text-muted-foreground">SOC</p>
-                <div className="mt-1 flex items-center gap-2">
-                  <div className="h-2 flex-1 rounded-full bg-muted">
-                    <div
-                      className="h-2 rounded-full bg-primary"
-                      style={{ width: `${detail.batteryCapacitySoc || 0}%` }}
-                    />
-                  </div>
-                  <span className="font-mono text-xs font-medium tabular-nums text-card-foreground">
-                    {detail.batteryCapacitySoc?.toFixed(0) || 0}%
-                  </span>
-                </div>
+                <p className="text-xs text-muted-foreground">Power</p>
+                <p className="font-medium tabular-nums text-card-foreground">{detail.generatorPower?.toFixed(2) || 0} {detail.generatorPowerStr || "kW"}</p>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">SOH</p>
-                <p className="font-medium tabular-nums text-card-foreground">
-                  {detail.batteryHealthSoh?.toFixed(0) || 0}%
-                </p>
+                <p className="text-xs text-muted-foreground">Today</p>
+                <p className="font-medium tabular-nums text-card-foreground">{detail.generatorTodayEnergy?.toFixed(1) || 0} {detail.generatorTodayEnergyStr || "kWh"}</p>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Charged Today</p>
-                <p className="font-medium tabular-nums text-card-foreground">
-                  {detail.batteryTodayChargeEnergy?.toFixed(1) || 0} {detail.batteryTodayChargeEnergyStr || "kWh"}
-                </p>
+                <p className="text-xs text-muted-foreground">Total</p>
+                <p className="font-medium tabular-nums text-card-foreground">{detail.generatorTotalEnergy?.toFixed(1) || 0} {detail.generatorTotalEnergyStr || "kWh"}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Backup Energy — only if an outage has occurred */}
+      {detail.backupTotalEnergy > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-sm font-semibold text-card-foreground">
+              <ShieldCheck className="h-4 w-4 text-muted-foreground" />
+              Backup Energy
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-4 text-sm text-center">
+              <div>
+                <p className="text-xs text-muted-foreground">Today</p>
+                <p className="font-medium tabular-nums text-card-foreground">{detail.backupTodayEnergy?.toFixed(1) || 0} {detail.backupTodayEnergyStr || "kWh"}</p>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Discharged Today</p>
-                <p className="font-medium tabular-nums text-card-foreground">
-                  {detail.batteryTodayDischargeEnergy?.toFixed(1) || 0} {detail.batteryTodayDischargeEnergyStr || "kWh"}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Total Charged</p>
-                <p className="font-medium tabular-nums text-card-foreground">
-                  {detail.batteryTotalChargeEnergy?.toFixed(1) || 0} {detail.batteryTotalChargeEnergyStr || "kWh"}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Total Discharged</p>
-                <p className="font-medium tabular-nums text-card-foreground">
-                  {detail.batteryTotalDischargeEnergy?.toFixed(1) || 0} {detail.batteryTotalDischargeEnergyStr || "kWh"}
-                </p>
+                <p className="text-xs text-muted-foreground">Total</p>
+                <p className="font-medium tabular-nums text-card-foreground">{detail.backupTotalEnergy?.toFixed(1) || 0} {detail.backupTotalEnergyStr || "kWh"}</p>
               </div>
             </div>
           </CardContent>

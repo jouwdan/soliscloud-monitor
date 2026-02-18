@@ -70,12 +70,19 @@ interface LoadShiftingAnalysis {
   gridExportRevenue: number
   netCost: number
   costWithoutSolar: number
+  // Full off-peak/peak breakdowns
+  peakBatteryCharge: number
+  offPeakBatteryDischarge: number
+  offPeakSolarDirect: number
   // Battery economics
   batteryChargeCost: number      // cost of energy used to charge battery
   batteryDischargeValue: number  // value of grid imports avoided by discharging
   batteryNetBenefit: number      // dischargeValue - chargeCost
   batteryChargeAvgRate: number   // weighted avg rate during charging
   batteryDischargeAvgRate: number // weighted avg rate during discharging
+  // Hero metrics
+  billSavingsPercent: number     // % cheaper vs grid-only (when rates configured)
+  gridIndependence: number       // % of load met by non-grid sources (interval-weighted)
 }
 
 function analyzeLoadShifting(
@@ -99,8 +106,9 @@ function analyzeLoadShifting(
   let rawGridImport = 0, rawGridExport = 0, rawBattCharge = 0, rawBattDischarge = 0
   let rawSolar = 0, rawLoad = 0
   let rawOffPeakGridImport = 0, rawPeakGridImport = 0
-  let rawOffPeakBattCharge = 0, rawPeakBattDischarge = 0
-  let rawPeakSolar = 0
+  let rawOffPeakBattCharge = 0, rawPeakBattCharge = 0
+  let rawOffPeakBattDischarge = 0, rawPeakBattDischarge = 0
+  let rawOffPeakSolar = 0, rawPeakSolar = 0
   let rawOffPeakLoad = 0, rawPeakLoad = 0
   let offPeakPoints = 0, peakPoints = 0
 
@@ -110,6 +118,8 @@ function analyzeLoadShifting(
 
   // Per-tariff-group weighted rate for battery charge / discharge
   let rawBattChargeWeighted = 0, rawBattDischargeWeighted = 0
+  // Grid-to-load: per-interval min(gridImport, load) for grid independence calc
+  let rawGridToLoad = 0
 
   const sorted = [...dayData].sort(
     (a, b) => Number(a.dataTimestamp) - Number(b.dataTimestamp)
@@ -133,11 +143,12 @@ function analyzeLoadShifting(
 
     const raw = entry as Record<string, unknown>
     const sharedPec = entry.pacPec
+    const unitFallback = entry.pacStr // "W" in most responses – use as fallback when metric has no Str
     const gridPec = (raw.psumPec ?? raw.psumCalPec ?? raw.pSumPec ?? sharedPec) as string | undefined
-    const gridPower = toKW(entry.pSum, entry.pSumStr, gridPec)
-    const battPower = toKW(entry.batteryPower, entry.batteryPowerStr, (entry.batteryPowerPec ?? sharedPec) as string | undefined)
+    const gridPower = toKW(entry.pSum, entry.pSumStr || unitFallback, gridPec)
+    const battPower = toKW(entry.batteryPower, entry.batteryPowerStr || unitFallback, (entry.batteryPowerPec ?? sharedPec) as string | undefined)
     const solarPower = toKW(entry.pac, entry.pacStr, entry.pacPec)
-    const loadPower = toKW(entry.familyLoadPower, entry.familyLoadPowerStr, (entry.familyLoadPowerPec ?? sharedPec) as string | undefined)
+    const loadPower = toKW(entry.familyLoadPower, entry.familyLoadPowerStr || unitFallback, (entry.familyLoadPowerPec ?? sharedPec) as string | undefined)
     const rate = getRateForHour(hour, tariffGroups)
 
     // Solis convention: negative pSum = importing from grid, positive = exporting
@@ -151,6 +162,7 @@ function analyzeLoadShifting(
     rawGridImport += gi; rawGridExport += ge
     rawBattCharge += bc; rawBattDischarge += bd
     rawSolar += sl; rawLoad += ld
+    rawGridToLoad += Math.min(gi, ld) // grid energy that served load (not battery)
 
     // Weighted rate for battery economics
     rawBattChargeWeighted += bc * rate
@@ -168,10 +180,13 @@ function analyzeLoadShifting(
       offPeakPoints++
       rawOffPeakGridImport += gi
       rawOffPeakBattCharge += bc
+      rawOffPeakBattDischarge += bd
+      rawOffPeakSolar += sl
       rawOffPeakLoad += ld
     } else {
       peakPoints++
       rawPeakGridImport += gi
+      rawPeakBattCharge += bc
       rawPeakBattDischarge += bd
       rawPeakSolar += sl
       rawPeakLoad += ld
@@ -188,16 +203,22 @@ function analyzeLoadShifting(
   const offPeakGridImport = rawOffPeakGridImport * scaleGrid
   const peakGridImport = rawPeakGridImport * scaleGrid
   const offPeakBatteryCharge = rawOffPeakBattCharge * scaleBattC
+  const peakBatteryCharge = rawPeakBattCharge * scaleBattC
+  const offPeakBatteryDischarge = rawOffPeakBattDischarge * scaleBattD
   const peakBatteryDischarge = rawPeakBattDischarge * scaleBattD
+  const offPeakSolarDirect = rawOffPeakSolar * scaleSolar
   const peakSolarDirect = rawPeakSolar * scaleSolar
   const offPeakConsumption = rawOffPeakLoad * scaleLoad
   const peakConsumption = rawPeakLoad * scaleLoad
   const totalConsumption = mConsumption
 
   const loadShiftedEnergy = Math.min(offPeakBatteryCharge, peakBatteryDischarge)
+  // Peak self-sufficiency: what % of peak consumption was met without grid.
+  // Uses (consumption - gridImport) rather than summing sources, which avoids
+  // double-counting solar that went to battery/export rather than direct load.
   const loadShiftEfficiency =
     peakConsumption > 0
-      ? Math.min(100, ((peakBatteryDischarge + peakSolarDirect) / peakConsumption) * 100)
+      ? Math.min(100, Math.max(0, ((peakConsumption - peakGridImport) / peakConsumption) * 100))
       : 0
 
   // ── Cost calculations using scaled values and TOU rates ──
@@ -250,11 +271,23 @@ function analyzeLoadShifting(
   const costWithoutSolar = tariffBreakdown.reduce((sum, b) => sum + b.consumption * b.group.rate, 0) || mConsumption * avgRate
   const netCost = totalGridCost - gridExportRevenue
 
+  // Hero metrics
+  const billSavingsPercent = costWithoutSolar > 0.01
+    ? Math.min(100, Math.max(0, ((costWithoutSolar - netCost) / costWithoutSolar) * 100))
+    : 0
+  // Grid independence: what % of load was met by non-grid sources (per-interval)
+  const gridIndependence = rawLoad > 0.001
+    ? Math.min(100, Math.max(0, (1 - rawGridToLoad / rawLoad) * 100))
+    : 0
+
   return {
     offPeakGridImport,
     peakGridImport,
     offPeakBatteryCharge,
+    peakBatteryCharge,
+    offPeakBatteryDischarge,
     peakBatteryDischarge,
+    offPeakSolarDirect,
     peakSolarDirect,
     offPeakConsumption,
     peakConsumption,
@@ -278,6 +311,8 @@ function analyzeLoadShifting(
     batteryNetBenefit: batteryDischargeValue - batteryChargeCost,
     batteryChargeAvgRate: mBattCharge > 0 ? batteryChargeCost / mBattCharge : 0,
     batteryDischargeAvgRate: mBattDischarge > 0 ? batteryDischargeValue / mBattDischarge : 0,
+    billSavingsPercent,
+    gridIndependence,
   }
 }
 
@@ -485,44 +520,51 @@ export function LoadShiftingCard({ detail, dayData, monthData, yearData }: LoadS
           </div>
         ) : period === "day" ? (
           <>
-            {/* Self-sufficiency + key stats */}
-            <div className="flex items-center gap-4 rounded-lg border bg-muted/30 px-5 py-4">
-              <div className="flex flex-col items-center gap-1">
-                <p className="text-3xl font-bold tabular-nums text-card-foreground">
-                  {analysis.loadShiftEfficiency.toFixed(0)}%
-                </p>
-                <div className="h-2 w-16 rounded-full bg-muted">
-                  <div
-                    className="h-2 rounded-full transition-all"
-                    style={{
-                      width: `${Math.min(100, analysis.loadShiftEfficiency)}%`,
-                      background:
-                        analysis.loadShiftEfficiency >= 80
-                          ? "hsl(var(--chart-4))"
-                          : analysis.loadShiftEfficiency >= 50
-                            ? "hsl(var(--chart-2))"
-                            : "hsl(var(--chart-5))",
-                    }}
-                  />
+            {/* Hero metric + key stats */}
+            {(() => {
+              const useFinancial = analysis.hasRates && analysis.costWithoutSolar > 0.01
+              const heroValue = useFinancial ? analysis.billSavingsPercent : analysis.gridIndependence
+              const heroLabel = useFinancial ? "bill savings" : "grid independence"
+              return (
+                <div className="flex items-center gap-4 rounded-lg border bg-muted/30 px-5 py-4">
+                  <div className="flex flex-col items-center gap-1">
+                    <p className="text-3xl font-bold tabular-nums text-card-foreground">
+                      {heroValue.toFixed(0)}%
+                    </p>
+                    <div className="h-2 w-16 rounded-full bg-muted">
+                      <div
+                        className="h-2 rounded-full transition-all"
+                        style={{
+                          width: `${Math.min(100, heroValue)}%`,
+                          background:
+                            heroValue >= 50
+                              ? "hsl(var(--chart-4))"
+                              : heroValue >= 25
+                                ? "hsl(var(--chart-2))"
+                                : "hsl(var(--chart-5))",
+                        }}
+                      />
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">{heroLabel}</p>
+                  </div>
+                  <div className="h-10 w-px bg-border" />
+                  <div className="grid flex-1 grid-cols-3 gap-3 text-center text-sm">
+                    <div>
+                      <p className="text-lg font-bold tabular-nums text-card-foreground">{analysis.totalConsumption.toFixed(1)}</p>
+                      <p className="text-[10px] text-muted-foreground">kWh consumed</p>
+                    </div>
+                    <div>
+                      <p className="text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{analysis.loadShiftedEnergy.toFixed(1)}</p>
+                      <p className="text-[10px] text-muted-foreground">kWh shifted</p>
+                    </div>
+                    <div>
+                      <p className="text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{(analysis.peakBatteryDischarge + analysis.peakSolarDirect).toFixed(1)}</p>
+                      <p className="text-[10px] text-muted-foreground">kWh peak avoided</p>
+                    </div>
+                  </div>
                 </div>
-                <p className="text-[10px] text-muted-foreground">self-sufficient</p>
-              </div>
-              <div className="h-10 w-px bg-border" />
-              <div className="grid flex-1 grid-cols-3 gap-3 text-center text-sm">
-                <div>
-                  <p className="text-lg font-bold tabular-nums text-card-foreground">{analysis.totalConsumption.toFixed(1)}</p>
-                  <p className="text-[10px] text-muted-foreground">kWh consumed</p>
-                </div>
-                <div>
-                  <p className="text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{analysis.loadShiftedEnergy.toFixed(1)}</p>
-                  <p className="text-[10px] text-muted-foreground">kWh shifted</p>
-                </div>
-                <div>
-                  <p className="text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{(analysis.peakBatteryDischarge + analysis.peakSolarDirect).toFixed(1)}</p>
-                  <p className="text-[10px] text-muted-foreground">kWh peak avoided</p>
-                </div>
-              </div>
-            </div>
+              )
+            })()}
 
             {/* Combined energy breakdown table */}
             <div className="overflow-x-auto">
@@ -548,23 +590,23 @@ export function LoadShiftingCard({ detail, dayData, monthData, yearData }: LoadS
                   </tr>
                   <tr>
                     <td className="flex items-center gap-1.5 px-3 py-2 font-medium text-card-foreground"><Sun className="h-3.5 w-3.5 text-primary" /> Solar Direct</td>
-                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">--</td>
-                    <td className="px-3 py-2 text-right tabular-nums text-emerald-600 dark:text-emerald-400">{analysis.peakSolarDirect.toFixed(2)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums font-medium text-emerald-600 dark:text-emerald-400">{analysis.peakSolarDirect.toFixed(2)} kWh</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-card-foreground">{analysis.offPeakSolarDirect > 0.001 ? analysis.offPeakSolarDirect.toFixed(2) : "--"}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-emerald-600 dark:text-emerald-400">{analysis.peakSolarDirect > 0.001 ? analysis.peakSolarDirect.toFixed(2) : "0.00"}</td>
+                    <td className="px-3 py-2 text-right tabular-nums font-medium text-emerald-600 dark:text-emerald-400">{(analysis.offPeakSolarDirect + analysis.peakSolarDirect).toFixed(2)} kWh</td>
                   </tr>
                   {hasBattery && (
                   <>
                   <tr>
                     <td className="flex items-center gap-1.5 px-3 py-2 font-medium text-card-foreground"><BatteryCharging className="h-3.5 w-3.5 text-primary" /> Batt Charge</td>
-                    <td className="px-3 py-2 text-right tabular-nums text-card-foreground">{analysis.offPeakBatteryCharge.toFixed(2)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">--</td>
-                    <td className="px-3 py-2 text-right tabular-nums font-medium text-card-foreground">{analysis.offPeakBatteryCharge.toFixed(2)} kWh</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-card-foreground">{analysis.offPeakBatteryCharge > 0.001 ? analysis.offPeakBatteryCharge.toFixed(2) : "--"}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-card-foreground">{analysis.peakBatteryCharge > 0.001 ? analysis.peakBatteryCharge.toFixed(2) : "--"}</td>
+                    <td className="px-3 py-2 text-right tabular-nums font-medium text-card-foreground">{(analysis.offPeakBatteryCharge + analysis.peakBatteryCharge).toFixed(2)} kWh</td>
                   </tr>
                   <tr>
                     <td className="flex items-center gap-1.5 px-3 py-2 font-medium text-card-foreground"><Battery className="h-3.5 w-3.5 text-primary" /> Batt Discharge</td>
-                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">--</td>
-                    <td className="px-3 py-2 text-right tabular-nums text-emerald-600 dark:text-emerald-400">{analysis.peakBatteryDischarge.toFixed(2)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums font-medium text-emerald-600 dark:text-emerald-400">{analysis.peakBatteryDischarge.toFixed(2)} kWh</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-card-foreground">{analysis.offPeakBatteryDischarge > 0.001 ? analysis.offPeakBatteryDischarge.toFixed(2) : "--"}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-emerald-600 dark:text-emerald-400">{analysis.peakBatteryDischarge > 0.001 ? analysis.peakBatteryDischarge.toFixed(2) : "--"}</td>
+                    <td className="px-3 py-2 text-right tabular-nums font-medium text-emerald-600 dark:text-emerald-400">{(analysis.offPeakBatteryDischarge + analysis.peakBatteryDischarge).toFixed(2)} kWh</td>
                   </tr>
                   </>
                   )}

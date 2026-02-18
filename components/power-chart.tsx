@@ -87,7 +87,7 @@ export function PowerChart({ data }: PowerChartProps) {
   if (!data || data.length === 0) {
     return (
       <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">
-        No data available for today
+        No data available
       </div>
     )
   }
@@ -106,12 +106,13 @@ export function PowerChart({ data }: PowerChartProps) {
     .map((entry) => {
       const raw = entry as Record<string, unknown>
       const sharedPec = entry.pacPec
+      const unitFallback = entry.pacStr // "W" in most responses – use as fallback when metric has no Str
       const gridPec = (raw.psumPec ?? raw.psumCalPec ?? raw.pSumPec ?? sharedPec) as string | undefined
       const battPec = (entry.batteryPowerPec ?? sharedPec) as string | undefined
       const loadPec = (entry.familyLoadPowerPec ?? sharedPec) as string | undefined
 
-      const batt = toKW(entry.batteryPower, entry.batteryPowerStr, battPec)
-      const grid = toKW(entry.pSum, entry.pSumStr, gridPec)
+      const batt = toKW(entry.batteryPower, entry.batteryPowerStr || unitFallback, battPec)
+      const grid = toKW(entry.pSum, entry.pSumStr || unitFallback, gridPec)
 
       // Dead-band: suppress noisy readings below 0.02 kW (20W)
       const DEAD_BAND = 0.02
@@ -119,7 +120,7 @@ export function PowerChart({ data }: PowerChartProps) {
       return {
         ts: toMs(entry.dataTimestamp),
         solar: toKW(entry.pac, entry.pacStr, entry.pacPec),
-        homeLoad: toKW(entry.familyLoadPower, entry.familyLoadPowerStr, loadPec),
+        homeLoad: toKW(entry.familyLoadPower, entry.familyLoadPowerStr || unitFallback, loadPec),
         battCharge: batt > DEAD_BAND ? batt : 0,
         battDrain: batt < -DEAD_BAND ? Math.abs(batt) : 0,
         gridImport: grid < -DEAD_BAND ? Math.abs(grid) : 0,
