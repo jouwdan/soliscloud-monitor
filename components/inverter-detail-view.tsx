@@ -13,7 +13,7 @@ import {
   Info,
   ShieldCheck,
 } from "lucide-react"
-import { useInverterDetail, useInverterDay, useInverterMonth, useInverterYear, getCurrencySettings, getTariffGroups, getExportPrice, toKWh, getTariffForHour, toKW, type InverterDayEntry } from "@/lib/solis-client"
+import { useInverterDetail, useInverterDay, useInverterMonth, useInverterYear, getCurrencySettings, getTariffGroups, getExportPrice, pickGridPower, pickGridPowerPec, toKWh, getTariffForHour, toKW, type InverterDayEntry } from "@/lib/solis-client"
 import { PowerFlow } from "@/components/power-flow"
 import { LoadShiftingCard } from "@/components/load-shifting-card"
 import { StatusBadge } from "@/components/status-badge"
@@ -74,8 +74,9 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
       const raw = entry as Record<string, unknown>
       const sharedPec = entry.pacPec
       const unitFallback = entry.pacStr // "W" in most responses – use as fallback when metric has no Str
-      const gridPec = (raw.psumPec ?? raw.psumCalPec ?? raw.pSumPec ?? sharedPec) as string | undefined
-      const gridPower = toKW(entry.pSum, entry.pSumStr || unitFallback, gridPec)
+      const gridPec = pickGridPowerPec(raw, sharedPec)
+      const gridPick = pickGridPower(entry)
+      const gridPower = toKW(gridPick.value, gridPick.unit || unitFallback, gridPec)
       const loadPower = toKW(entry.familyLoadPower, entry.familyLoadPowerStr || unitFallback, ((raw.familyLoadPowerPec ?? sharedPec) as string | undefined))
 
       // Solis: negative pSum = grid import, positive = grid export

@@ -11,7 +11,7 @@ import {
   CartesianGrid,
 } from "recharts"
 import type { InverterDayEntry } from "@/lib/solis-client"
-import { toKW } from "@/lib/solis-client"
+import { pickGridPower, pickGridPowerPec, toKW } from "@/lib/solis-client"
 
 interface PowerChartProps {
   data: InverterDayEntry[]
@@ -107,12 +107,13 @@ export function PowerChart({ data }: PowerChartProps) {
       const raw = entry as Record<string, unknown>
       const sharedPec = entry.pacPec
       const unitFallback = entry.pacStr // "W" in most responses – use as fallback when metric has no Str
-      const gridPec = (raw.psumPec ?? raw.psumCalPec ?? raw.pSumPec ?? sharedPec) as string | undefined
+      const gridPec = pickGridPowerPec(raw, sharedPec)
       const battPec = (entry.batteryPowerPec ?? sharedPec) as string | undefined
       const loadPec = (entry.familyLoadPowerPec ?? sharedPec) as string | undefined
 
       const batt = toKW(entry.batteryPower, entry.batteryPowerStr || unitFallback, battPec)
-      const grid = toKW(entry.pSum, entry.pSumStr || unitFallback, gridPec)
+      const gridPick = pickGridPower(entry)
+      const grid = toKW(gridPick.value, gridPick.unit || unitFallback, gridPec)
 
       // Dead-band: suppress noisy readings below 0.02 kW (20W)
       const DEAD_BAND = 0.02

@@ -151,7 +151,19 @@ function PvStringPill({
 /* ─── main component ─── */
 export function PowerFlow({ detail }: { detail: InverterDetail }) {
   const solarPower = detail.pac || 0
-  const gridPower = detail.pSum || 0           // positive = import, negative = export
+  // Grid power can appear as pSum, psum, or psumCal depending on inverter/firmware.
+  const gridCandidates = [
+    { value: detail.pSum, unit: detail.pSumStr },
+    { value: (detail as InverterDetail & { psum?: number }).psum, unit: (detail as InverterDetail & { psumStr?: string }).psumStr },
+    { value: detail.psumCal, unit: detail.psumCalStr },
+    { value: (detail as InverterDetail & { pSumCal?: number }).pSumCal, unit: (detail as InverterDetail & { pSumCalStr?: string }).pSumCalStr },
+  ]
+  const gridPick =
+    gridCandidates.find((c) => typeof c.value === "number" && Math.abs(c.value || 0) > 0) ||
+    gridCandidates.find((c) => typeof c.value === "number") ||
+    { value: 0, unit: "kW" }
+  const gridPower = (gridPick.value || 0) // negative = import, positive = export
+  const gridPowerUnit = gridPick.unit || "kW"
   const batteryPower = detail.batteryPower || 0 // positive = charging, negative = discharging
   const homePower = detail.familyLoadPower || 0
   const batterySoc = detail.batteryCapacitySoc || 0
@@ -353,7 +365,7 @@ export function PowerFlow({ detail }: { detail: InverterDetail }) {
           icon={Zap}
           label="Grid"
           value={Math.abs(gridPower).toFixed(2)}
-          unit={detail.pSumStr || "kW"}
+          unit={gridPowerUnit}
           color={GRID_COLOR}
           sub={gridImporting ? "Importing" : gridExporting ? "Exporting" : "Idle"}
         />
