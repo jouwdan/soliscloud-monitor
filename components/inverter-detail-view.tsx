@@ -205,7 +205,7 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
             </div>
             <div>
               <span className="text-muted-foreground">Type</span>
-              <p className="font-medium text-card-foreground">{detail.type === 2 ? "Storage" : "Grid-tied"}</p>
+              <p className="font-medium text-card-foreground">{detail.type === 2 || detail.batteryCapacitySoc > 0 ? "Storage" : "Grid-tied"}</p>
             </div>
             <div>
               <span className="text-muted-foreground">Firmware</span>
@@ -308,6 +308,20 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
                         <p className="mt-1 text-[9px] text-muted-foreground">of production used directly</p>
                       </div>
                     </div>
+                    {detail.homeLoadYesterdayEnergy > 0 && (() => {
+                      const yesterdayLoad = toKWh(detail.homeLoadYesterdayEnergy, detail.homeLoadYesterdayEnergyStr)
+                      const delta = consumed - yesterdayLoad
+                      return (
+                        <div className="mt-2 pt-2 border-t text-center text-xs text-muted-foreground">
+                          Yesterday&apos;s load: {yesterdayLoad.toFixed(1)} kWh
+                          {consumed > 0.01 && (
+                            <span className={delta > 0 ? "text-red-400 ml-1" : "text-emerald-400 ml-1"}>
+                              ({delta > 0 ? "+" : ""}{delta.toFixed(1)} kWh today)
+                            </span>
+                          )}
+                        </div>
+                      )
+                    })()}
                   </CardContent>
                 </Card>
 
@@ -551,6 +565,98 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
         <LoadShiftingCard detail={detail} dayData={dayData} monthData={monthData} yearData={yearData} />
       )}
 
+      {/* Battery Details — show when inverter is storage type or has battery data */}
+      {(detail.type === 2 || detail.batteryCapacitySoc > 0 || detail.batteryTodayChargeEnergy > 0) && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base font-semibold text-card-foreground">
+              <Battery className="h-4 w-4 text-muted-foreground" />
+              Battery Details
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
+              <div>
+                <p className="text-xs text-muted-foreground">SOC</p>
+                <div className="mt-1 flex items-center gap-2">
+                  <div className="h-2 flex-1 rounded-full bg-muted">
+                    <div
+                      className="h-2 rounded-full bg-primary"
+                      style={{ width: `${detail.batteryCapacitySoc || 0}%` }}
+                    />
+                  </div>
+                  <span className="font-mono text-xs font-medium tabular-nums text-card-foreground">
+                    {detail.batteryCapacitySoc?.toFixed(0) || 0}%
+                  </span>
+                </div>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">SOH</p>
+                <p className="font-medium tabular-nums text-card-foreground">
+                  {detail.batteryHealthSoh?.toFixed(0) || 0}%
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Charged Today</p>
+                <p className="font-medium tabular-nums text-card-foreground">
+                  {detail.batteryTodayChargeEnergy?.toFixed(1) || 0} {detail.batteryTodayChargeEnergyStr || "kWh"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Discharged Today</p>
+                <p className="font-medium tabular-nums text-card-foreground">
+                  {detail.batteryTodayDischargeEnergy?.toFixed(1) || 0} {detail.batteryTodayDischargeEnergyStr || "kWh"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Total Charged</p>
+                <p className="font-medium tabular-nums text-card-foreground">
+                  {detail.batteryTotalChargeEnergy?.toFixed(1) || 0} {detail.batteryTotalChargeEnergyStr || "kWh"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Total Discharged</p>
+                <p className="font-medium tabular-nums text-card-foreground">
+                  {detail.batteryTotalDischargeEnergy?.toFixed(1) || 0} {detail.batteryTotalDischargeEnergyStr || "kWh"}
+                </p>
+              </div>
+              {(() => {
+                const ext = detail as Record<string, unknown>
+                const dischFloor = ext.socDischargeSet as number | undefined
+                const epsReserve = ext.epsDDepth as number | undefined
+                const backupV = ext.bypassAcVoltage as number | undefined
+                const showBackup = ext.backupShow === 1
+                if (!dischFloor && !epsReserve && !showBackup) return null
+                return (
+                  <>
+                    {dischFloor != null && dischFloor > 0 && (
+                      <div>
+                        <p className="text-xs text-muted-foreground">Min SOC (Grid)</p>
+                        <p className="font-medium tabular-nums text-card-foreground">{dischFloor}%</p>
+                        <p className="text-[9px] text-muted-foreground">daily discharge floor</p>
+                      </div>
+                    )}
+                    {showBackup && epsReserve != null && epsReserve > 0 && (
+                      <div>
+                        <p className="text-xs text-muted-foreground">Min SOC (Backup)</p>
+                        <p className="font-medium tabular-nums text-card-foreground">{epsReserve}%</p>
+                        <p className="text-[9px] text-muted-foreground">reserve during outage</p>
+                      </div>
+                    )}
+                    {showBackup && backupV != null && backupV > 0 && (
+                      <div>
+                        <p className="text-xs text-muted-foreground">Backup Voltage</p>
+                        <p className="font-medium tabular-nums text-card-foreground">{backupV.toFixed(1)} V</p>
+                      </div>
+                    )}
+                  </>
+                )
+              })()}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* DC/AC Readings */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
@@ -611,72 +717,75 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
                 </div>
               ))}
             </div>
-            <div className="mt-3 flex items-center gap-4 text-xs text-muted-foreground">
+            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
               <span className="flex items-center gap-1">
                 <Thermometer className="h-3 w-3" />
                 Temp: {detail.inverterTemperature || 0}&deg;C
               </span>
               <span>Freq: {detail.fac || 0} {detail.facStr || "Hz"}</span>
               <span>Full Hours: {detail.fullHour?.toFixed(1) || 0}h</span>
+              {detail.apparentPower > 0 && (() => {
+                const pacKW = toKW(detail.pac, detail.pacStr)
+                const appKVA = toKW(detail.apparentPower, detail.apparentPowerStr)
+                const pf = appKVA > 0 ? Math.abs(pacKW) / appKVA : 0
+                return (
+                  <>
+                    <span>PF: {Math.min(1, pf).toFixed(2)}</span>
+                    <span>Apparent: {detail.apparentPower} {detail.apparentPowerStr || "kVA"}</span>
+                  </>
+                )
+              })()}
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Battery Details */}
-      {detail.type === 2 && (
+      {/* Generator — only if supported */}
+      {((detail as Record<string, unknown>).generatorSupport === 1 || detail.generatorTotalEnergy > 0) && (
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base font-semibold text-card-foreground">
-              <Battery className="h-4 w-4 text-muted-foreground" />
-              Battery Details
+            <CardTitle className="flex items-center gap-2 text-sm font-semibold text-card-foreground">
+              <Info className="h-4 w-4 text-muted-foreground" />
+              Generator
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
+            <div className="grid grid-cols-3 gap-4 text-sm text-center">
               <div>
-                <p className="text-xs text-muted-foreground">SOC</p>
-                <div className="mt-1 flex items-center gap-2">
-                  <div className="h-2 flex-1 rounded-full bg-muted">
-                    <div
-                      className="h-2 rounded-full bg-primary"
-                      style={{ width: `${detail.batteryCapacitySoc || 0}%` }}
-                    />
-                  </div>
-                  <span className="font-mono text-xs font-medium tabular-nums text-card-foreground">
-                    {detail.batteryCapacitySoc?.toFixed(0) || 0}%
-                  </span>
-                </div>
+                <p className="text-xs text-muted-foreground">Power</p>
+                <p className="font-medium tabular-nums text-card-foreground">{detail.generatorPower?.toFixed(2) || 0} {detail.generatorPowerStr || "kW"}</p>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">SOH</p>
-                <p className="font-medium tabular-nums text-card-foreground">
-                  {detail.batteryHealthSoh?.toFixed(0) || 0}%
-                </p>
+                <p className="text-xs text-muted-foreground">Today</p>
+                <p className="font-medium tabular-nums text-card-foreground">{detail.generatorTodayEnergy?.toFixed(1) || 0} {detail.generatorTodayEnergyStr || "kWh"}</p>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Charged Today</p>
-                <p className="font-medium tabular-nums text-card-foreground">
-                  {detail.batteryTodayChargeEnergy?.toFixed(1) || 0} {detail.batteryTodayChargeEnergyStr || "kWh"}
-                </p>
+                <p className="text-xs text-muted-foreground">Total</p>
+                <p className="font-medium tabular-nums text-card-foreground">{detail.generatorTotalEnergy?.toFixed(1) || 0} {detail.generatorTotalEnergyStr || "kWh"}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Backup Energy — only if an outage has occurred */}
+      {detail.backupTotalEnergy > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-sm font-semibold text-card-foreground">
+              <ShieldCheck className="h-4 w-4 text-muted-foreground" />
+              Backup Energy
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-4 text-sm text-center">
+              <div>
+                <p className="text-xs text-muted-foreground">Today</p>
+                <p className="font-medium tabular-nums text-card-foreground">{detail.backupTodayEnergy?.toFixed(1) || 0} {detail.backupTodayEnergyStr || "kWh"}</p>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Discharged Today</p>
-                <p className="font-medium tabular-nums text-card-foreground">
-                  {detail.batteryTodayDischargeEnergy?.toFixed(1) || 0} {detail.batteryTodayDischargeEnergyStr || "kWh"}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Total Charged</p>
-                <p className="font-medium tabular-nums text-card-foreground">
-                  {detail.batteryTotalChargeEnergy?.toFixed(1) || 0} {detail.batteryTotalChargeEnergyStr || "kWh"}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Total Discharged</p>
-                <p className="font-medium tabular-nums text-card-foreground">
-                  {detail.batteryTotalDischargeEnergy?.toFixed(1) || 0} {detail.batteryTotalDischargeEnergyStr || "kWh"}
-                </p>
+                <p className="text-xs text-muted-foreground">Total</p>
+                <p className="font-medium tabular-nums text-card-foreground">{detail.backupTotalEnergy?.toFixed(1) || 0} {detail.backupTotalEnergyStr || "kWh"}</p>
               </div>
             </div>
           </CardContent>
