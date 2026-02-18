@@ -10,12 +10,12 @@ import {
   RefreshCw,
   LogOut,
   Timer,
-  Moon,
 } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Select,
   SelectContent,
@@ -29,8 +29,6 @@ import {
   clearCredentials,
   getRefreshSeconds,
   saveRefreshSeconds,
-  getOffPeakSettings,
-  saveOffPeakSettings,
   getTariffGroups,
   saveTariffGroups,
   getCurrencySettings,
@@ -53,8 +51,7 @@ export function SettingsView() {
   const creds = getSavedCredentials()
   const [refreshSeconds, setRefreshSeconds] = useState(() => getRefreshSeconds())
   const [refreshSaved, setRefreshSaved] = useState(false)
-  const [offPeak, setOffPeak] = useState(() => getOffPeakSettings())
-  const [offPeakSaved, setOffPeakSaved] = useState(false)
+
   const [tariffGroups, setTariffGroups] = useState<TariffGroup[]>(() => getTariffGroups())
   const [tariffSaved, setTariffSaved] = useState(false)
   const [currency, setCurrency] = useState<CurrencySettings>(() => getCurrencySettings())
@@ -262,84 +259,6 @@ export function SettingsView() {
         </CardContent>
       </Card>
 
-      {/* Load Shifting / Off-Peak Window */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base font-semibold text-card-foreground">
-            <Moon className="h-4 w-4 text-indigo-400" />
-            Load Shifting Window
-          </CardTitle>
-          <CardDescription>
-            Set the off-peak charging window for load shifting analysis.
-            Your battery charges from the grid during these hours at the cheapest rate.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-2">
-              <Select
-                value={String(offPeak.startHour)}
-                onValueChange={(v) => {
-                  setOffPeak((prev) => ({ ...prev, startHour: parseInt(v, 10) }))
-                  setOffPeakSaved(false)
-                }}
-              >
-                <SelectTrigger className="w-28 font-mono">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Array.from({ length: 24 }, (_, i) => (
-                    <SelectItem key={i} value={String(i)}>
-                      {i === 0 ? "12 AM" : i < 12 ? `${i} AM` : i === 12 ? "12 PM" : `${i - 12} PM`}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <span className="text-sm text-muted-foreground">to</span>
-              <Select
-                value={String(offPeak.endHour)}
-                onValueChange={(v) => {
-                  setOffPeak((prev) => ({ ...prev, endHour: parseInt(v, 10) }))
-                  setOffPeakSaved(false)
-                }}
-              >
-                <SelectTrigger className="w-28 font-mono">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Array.from({ length: 24 }, (_, i) => (
-                    <SelectItem key={i} value={String(i)}>
-                      {i === 0 ? "12 AM" : i < 12 ? `${i} AM` : i === 12 ? "12 PM" : `${i - 12} PM`}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Overnight wrap-around supported (e.g. 11 PM to 8 AM)
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <Button
-              size="sm"
-              onClick={() => {
-                saveOffPeakSettings(offPeak)
-                setOffPeakSaved(true)
-                setTimeout(() => setOffPeakSaved(false), 3000)
-              }}
-            >
-              Save
-            </Button>
-            {offPeakSaved && (
-              <span className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
-                <CheckCircle2 className="h-3 w-3" />
-                Saved
-              </span>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
       {/* Currency */}
       <Card>
         <CardHeader>
@@ -448,8 +367,8 @@ export function SettingsView() {
             Tariff Rate Groups
           </CardTitle>
           <CardDescription>
-            Define your time-of-use electricity tariff periods. Each group covers a time window
-            with its own rate in {currency.code}/kWh. This is used to calculate cost savings from load shifting.
+            Define your time-of-use electricity tariff periods. Mark off-peak groups to indicate
+            when your battery charges from the grid at the cheapest rate.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -556,6 +475,23 @@ export function SettingsView() {
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
+                  </div>
+
+                  {/* Off-peak flag */}
+                  <div className="flex items-center gap-2 pl-5">
+                    <Checkbox
+                      id={`offpeak-${group.id}`}
+                      checked={group.isOffPeak === true}
+                      onCheckedChange={(checked) => {
+                        const updated = [...tariffGroups]
+                        updated[idx] = { ...group, isOffPeak: checked === true }
+                        setTariffGroups(updated)
+                        setTariffSaved(false)
+                      }}
+                    />
+                    <Label htmlFor={`offpeak-${group.id}`} className="text-xs text-muted-foreground">
+                      Off-peak (cheap rate for battery charging)
+                    </Label>
                   </div>
 
                   {/* Time slots */}
