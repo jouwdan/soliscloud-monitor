@@ -36,6 +36,8 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
   const today = format(new Date(), "yyyy-MM-dd")
   const yesterday = format(new Date(Date.now() - 86400000), "yyyy-MM-dd")
   const thisMonth = format(new Date(), "yyyy-MM")
+  const prevMonth = format(new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1), "yyyy-MM")
+  const dayOfMonth = new Date().getDate()
   const thisYear = format(new Date(), "yyyy")
 
   const currency = useMemo(() => getCurrencySettings(), [])
@@ -112,6 +114,9 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
     tz,
   )
   const { data: monthData } = useInverterMonth(id, sn, thisMonth)
+  // Fetch previous month when "7 Days" tab is active and we're in the first 7 days
+  const needsPrevMonth = powerTab === "week" && dayOfMonth < 7
+  const { data: prevMonthData } = useInverterMonth(needsPrevMonth ? id : "", sn, prevMonth)
   const { data: yearData } = useInverterYear(id, sn, thisYear)
   // Lifetime tab: fetch up to 4 previous years (conditional on tab)
   const isLifetime = powerTab === "lifetime"
@@ -415,20 +420,28 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
         <CardContent className="pb-4">
           {powerTab === "today" && <PowerChart data={dayData || []} />}
           {powerTab === "yesterday" && <PowerChart data={yesterdayData || []} />}
-          {powerTab === "week" && (
-            <EnergyBarChart
-              data={(monthData || []).slice(-7).map((d) => ({
-                label: d.dateStr?.split("-")[2] || "",
-                energy: d.energy,
-                gridSell: d.gridSellEnergy,
-                gridPurchased: d.gridPurchasedEnergy,
-                homeLoad: d.homeLoadEnergy,
-                batteryCharge: d.batteryChargeEnergy,
-                batteryDischarge: d.batteryDischargeEnergy,
-              }))}
-              xLabel="Day"
-            />
-          )}
+          {powerTab === "week" && (() => {
+            // Merge previous month + current month so the 7-day window spans month boundaries
+            const combined = [...(prevMonthData || []), ...(monthData || [])]
+              .sort((a, b) => (a.date || 0) - (b.date || 0))
+              .slice(-7)
+            return (
+              <EnergyBarChart
+                data={combined.map((d) => ({
+                  label: d.dateStr
+                    ? new Date(d.dateStr + "T00:00:00").toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })
+                    : "",
+                  energy: d.energy,
+                  gridSell: d.gridSellEnergy,
+                  gridPurchased: d.gridPurchasedEnergy,
+                  homeLoad: d.homeLoadEnergy,
+                  batteryCharge: d.batteryChargeEnergy,
+                  batteryDischarge: d.batteryDischargeEnergy,
+                }))}
+                xLabel="Day"
+              />
+            )
+          })()}
           {powerTab === "month" && (
             <EnergyBarChart
               data={(monthData || []).map((d) => ({
