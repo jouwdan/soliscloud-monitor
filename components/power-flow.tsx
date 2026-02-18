@@ -179,10 +179,11 @@ export function PowerFlow({ detail }: { detail: InverterDetail }) {
   }
   const hasStrings = pvStrings.length > 0
 
-  /* Whether each flow is active (power > small threshold) */
+  /* Whether each flow is active (power > small threshold)
+     Solis convention: negative pSum = importing from grid, positive = exporting */
   const solarActive = solarPower > 0.01
-  const gridImporting = gridPower > 0.01
-  const gridExporting = gridPower < -0.01
+  const gridImporting = gridPower < -0.01
+  const gridExporting = gridPower > 0.01
   const batteryCharging = batteryPower > 0.01
   const batteryDischarging = batteryPower < -0.01
   const homeActive = homePower > 0.01
