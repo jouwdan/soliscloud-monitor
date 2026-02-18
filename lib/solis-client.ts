@@ -109,7 +109,11 @@ export function getOffPeakSettings(): OffPeakSettings {
     if (raw) {
       const parsed = JSON.parse(raw)
       const merged = { ...defaults, ...parsed }
-      if (merged.tariffGroups) merged.tariffGroups = migrateOffPeakFlag(merged.tariffGroups)
+      if (Array.isArray(merged.tariffGroups)) {
+        merged.tariffGroups = migrateOffPeakFlag(merged.tariffGroups)
+      } else {
+        merged.tariffGroups = DEFAULT_TARIFF_GROUPS
+      }
       return merged
     }
     // migrate old keys
@@ -149,17 +153,21 @@ export function saveTariffGroups(groups: TariffGroup[]) {
   localStorage.setItem(STORAGE_KEY_TARIFF_GROUPS, JSON.stringify(groups))
 }
 
-export function isOffPeakHour(hour: number, settings: OffPeakSettings): boolean {
-  // Check if the tariff group for this hour is marked as off-peak
-  if (settings.tariffGroups && settings.tariffGroups.length > 0) {
-    const matched = getTariffForHour(hour, settings.tariffGroups)
-    if (matched) return matched.isOffPeak === true
+export function isOffPeakHour(hour: number, settings?: OffPeakSettings): boolean {
+  // Use the persisted tariff groups (which include the off-peak flags from the UI)
+  const groups = getTariffGroups()
+  const matched = getTariffForHour(hour, groups)
+  if (matched) return matched.isOffPeak === true
+  
+  // Legacy fallback for backwards compatibility
+  if (settings) {
+    if (settings.startHour > settings.endHour) {
+      return hour >= settings.startHour || hour < settings.endHour
+    }
+    return hour >= settings.startHour && hour < settings.endHour
   }
-  // Legacy fallback
-  if (settings.startHour > settings.endHour) {
-    return hour >= settings.startHour || hour < settings.endHour
-  }
-  return hour >= settings.startHour && hour < settings.endHour
+  
+  return false
 }
 
 function slotContainsHour(slot: TariffTimeSlot, hour: number): boolean {
