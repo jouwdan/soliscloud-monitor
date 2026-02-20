@@ -1,6 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
+import { TARIFF_COLOR_MAP } from "@/lib/constants"
 import {
   Moon,
   Sun,
@@ -697,24 +698,12 @@ export function LoadShiftingCard({ detail, dayData, monthData, yearData }: LoadS
                     </thead>
                     <tbody className="divide-y">
                       {analysis.tariffBreakdown.map((b) => {
-                        const dotColorMap: Record<string, string> = {
-                          indigo: "bg-indigo-500",
-                          sky: "bg-sky-500",
-                          amber: "bg-amber-500",
-                          red: "bg-red-500",
-                          emerald: "bg-emerald-500",
-                          violet: "bg-violet-500",
-                          orange: "bg-orange-500",
-                          rose: "bg-rose-500",
-                          teal: "bg-teal-500",
-                          slate: "bg-slate-500",
-                        }
                         const slots = getTariffSlots(b.group)
                         const hoursLabel = slots.map((s) => `${formatHour(s.startHour)}\u2013${formatHour(s.endHour)}`).join(", ")
                         return (
                           <tr key={b.group.id}>
                             <td className="flex items-center gap-2 px-3 py-2 font-medium text-card-foreground">
-                              <span className={`inline-block h-2.5 w-2.5 rounded-full shrink-0 ${dotColorMap[b.group.color] || "bg-primary"}`} />
+                              <span className={`inline-block h-2.5 w-2.5 rounded-full shrink-0 ${TARIFF_COLOR_MAP[b.group.color] || "bg-primary"}`} />
                               {b.group.name}
                             </td>
                             <td className="px-3 py-2 text-xs text-muted-foreground font-mono">
