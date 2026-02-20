@@ -163,6 +163,29 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
     )
   }
 
+
+  const produced = toKWh(detail.eToday, detail.eTodayStr)
+  const exported = toKWh(detail.gridSellTodayEnergy, detail.gridSellTodayEnergyStr)
+  const imported = toKWh(detail.gridPurchasedTodayEnergy, detail.gridPurchasedTodayEnergyStr)
+  const consumed = toKWh(detail.homeLoadTodayEnergy, detail.homeLoadTodayEnergyStr)
+  const battDischarge = toKWh(detail.batteryTodayDischargeEnergy, detail.batteryTodayDischargeEnergyStr)
+
+  const selfSupplied = Math.min(consumed, Math.max(0, produced - exported) + battDischarge)
+  const clampedExport = Math.min(exported, produced)
+  const selfConsumptionRate = produced > 0.01
+    ? ((produced - clampedExport) / produced) * 100
+    : 0
+  const selfRelianceRate = consumed > 0.01
+    ? (selfSupplied / consumed) * 100
+    : 0
+  const gridToHome = Math.max(0, consumed - selfSupplied)
+
+  const touToday = useMemo(() => computeTOUCost(dayData || [], imported, exported, consumed), [computeTOUCost, dayData, imported, exported, consumed])
+  const gridCostToday = touToday.gridCost
+  const exportRevenue = touToday.exportRev
+  const fullGridCost = touToday.fullGridCost
+  const valueSaved = Math.max(0, fullGridCost - gridCostToday)
+
   const lastUpdate = detail.dataTimestamp
     ? new Date(Number(detail.dataTimestamp)).toLocaleString()
     : "N/A"
@@ -262,30 +285,7 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
           </Card>
 
           {/* Self-Reliance & Self-Consumption */}
-          {(() => {
-            const produced = toKWh(detail.eToday, detail.eTodayStr)
-            const exported = toKWh(detail.gridSellTodayEnergy, detail.gridSellTodayEnergyStr)
-            const imported = toKWh(detail.gridPurchasedTodayEnergy, detail.gridPurchasedTodayEnergyStr)
-            const consumed = toKWh(detail.homeLoadTodayEnergy, detail.homeLoadTodayEnergyStr)
-            const battDischarge = toKWh(detail.batteryTodayDischargeEnergy, detail.batteryTodayDischargeEnergyStr)
 
-            const selfSupplied = Math.min(consumed, Math.max(0, produced - exported) + battDischarge)
-            const gridToHome = Math.max(0, consumed - selfSupplied)
-            const clampedExport = Math.min(exported, produced)
-            const selfConsumptionRate = produced > 0.01
-              ? ((produced - clampedExport) / produced) * 100
-              : 0
-            const selfRelianceRate = consumed > 0.01
-              ? (selfSupplied / consumed) * 100
-              : 0
-
-            const touToday = computeTOUCost(dayData || [], imported, exported, consumed)
-            const gridCostToday = touToday.gridCost
-            const exportRevenue = touToday.exportRev
-            const fullGridCost = touToday.fullGridCost
-            const valueSaved = Math.max(0, fullGridCost - gridCostToday)
-
-            return (
               <>
                 <Card>
                   <CardContent className="p-4">
@@ -410,8 +410,7 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
                   </Card>
                 )}
               </>
-            )
-          })()}
+
         </div>
       </div>
 
