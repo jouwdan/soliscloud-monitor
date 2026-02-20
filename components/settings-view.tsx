@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { TARIFF_COLOR_MAP } from "@/lib/constants"
 import { useRouter } from "next/navigation"
 import {
   Sun,
@@ -436,23 +437,11 @@ export function SettingsView() {
                 { value: "teal", label: "Teal" },
                 { value: "slate", label: "Slate" },
               ]
-              const dotColorMap: Record<string, string> = {
-                indigo: "bg-indigo-500",
-                sky: "bg-sky-500",
-                amber: "bg-amber-500",
-                red: "bg-red-500",
-                emerald: "bg-emerald-500",
-                violet: "bg-violet-500",
-                orange: "bg-orange-500",
-                rose: "bg-rose-500",
-                teal: "bg-teal-500",
-                slate: "bg-slate-500",
-              }
               const slots = getTariffSlots(group)
               return (
                 <div key={group.id} className="rounded-lg border p-3 space-y-3">
                   <div className="flex items-center gap-2">
-                    <div className={`h-3 w-3 rounded-full shrink-0 ${dotColorMap[group.color] || "bg-primary"}`} />
+                    <div className={`h-3 w-3 rounded-full shrink-0 ${TARIFF_COLOR_MAP[group.color] || "bg-primary"}`} />
                     <Input
                       value={group.name}
                       onChange={(e) => {
@@ -620,7 +609,7 @@ export function SettingsView() {
                           {colorOptions.map((c) => (
                             <SelectItem key={c.value} value={c.value}>
                               <span className="flex items-center gap-1.5">
-                                <span className={`inline-block h-2 w-2 rounded-full ${dotColorMap[c.value] || "bg-primary"}`} />
+                                <span className={`inline-block h-2 w-2 rounded-full ${TARIFF_COLOR_MAP[c.value] || "bg-primary"}`} />
                                 {c.label}
                               </span>
                             </SelectItem>
