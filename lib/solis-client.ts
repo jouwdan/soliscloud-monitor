@@ -294,11 +294,12 @@ export function toKW(
     }
   }
 
-  const u = (unitStr || "").toLowerCase().trim()
-  if (u === "w") return value / 1000
+  const u = (unitStr || "").toLowerCase().replace(/\s/g, "")
+  if (u === "w" || u === "watt" || u === "watts") return value / 1000
+  if (u === "mw") return value * 1000
+  if (u === "gw") return value * 1000000
 
-  // Heuristic: if labeled "kW" but value is implausibly large, it's likely W
-  if (Math.abs(value) > 100) return value / 1000
+  // "kw" or anything else → assume already kW
 
   return value
 }
