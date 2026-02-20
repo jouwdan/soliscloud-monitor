@@ -240,7 +240,7 @@ function analyzeLoadShifting(
   const totalGridCost = tariffBreakdown.reduce((sum, b) => sum + b.cost, 0)
   // Compute off-peak / peak grid cost from tariff breakdown
   const offPeakGridCost = tariffBreakdown.reduce((sum, b) => {
-    const isOp = isOffPeakHour(b.group.slots?.[0]?.startHour ?? b.group.startHour, settings)
+    const isOp = b.group.isOffPeak === true
     return sum + (isOp ? b.cost : 0)
   }, 0)
   const peakGridCost = totalGridCost - offPeakGridCost
@@ -262,7 +262,7 @@ function analyzeLoadShifting(
   let _totalH = 0, _weightedS = 0
   for (const g of tariffGroups) {
     if (g.rate <= 0) continue
-    const sl = g.slots?.length ? g.slots : [{ startHour: g.startHour, endHour: g.endHour }]
+    const sl = g.slots
     let h = 0
     for (const s of sl) h += s.endHour > s.startHour ? s.endHour - s.startHour : (24 - s.startHour) + s.endHour
     if (h > 0) { _weightedS += g.rate * h; _totalH += h }
@@ -460,7 +460,7 @@ export function LoadShiftingCard({ detail, dayData, monthData, yearData }: LoadS
     let totalH = 0, weightedS = 0
     for (const g of tariffGroups) {
       if (g.rate <= 0) continue
-      const sl = g.slots?.length ? g.slots : [{ startHour: g.startHour, endHour: g.endHour }]
+      const sl = g.slots
       let h = 0
       for (const s of sl) h += s.endHour > s.startHour ? s.endHour - s.startHour : (24 - s.startHour) + s.endHour
       if (h > 0) { weightedS += g.rate * h; totalH += h }

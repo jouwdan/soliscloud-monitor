@@ -506,7 +506,7 @@ export function SettingsView() {
                               const newSlots = [...slots]
                               newSlots[sIdx] = { ...slot, startHour: parseInt(v, 10) }
                               const updated = [...tariffGroups]
-                              updated[idx] = { ...group, slots: newSlots, startHour: newSlots[0].startHour, endHour: newSlots[0].endHour }
+                              updated[idx] = { ...group, slots: newSlots }
                               setTariffGroups(updated)
                               setTariffSaved(false)
                             }}
@@ -531,7 +531,7 @@ export function SettingsView() {
                               const newSlots = [...slots]
                               newSlots[sIdx] = { ...slot, endHour: parseInt(v, 10) }
                               const updated = [...tariffGroups]
-                              updated[idx] = { ...group, slots: newSlots, startHour: newSlots[0].startHour, endHour: newSlots[0].endHour }
+                              updated[idx] = { ...group, slots: newSlots }
                               setTariffGroups(updated)
                               setTariffSaved(false)
                             }}
@@ -556,7 +556,7 @@ export function SettingsView() {
                             onClick={() => {
                               const newSlots = slots.filter((_, si) => si !== sIdx)
                               const updated = [...tariffGroups]
-                              updated[idx] = { ...group, slots: newSlots, startHour: newSlots[0].startHour, endHour: newSlots[0].endHour }
+                              updated[idx] = { ...group, slots: newSlots }
                               setTariffGroups(updated)
                               setTariffSaved(false)
                             }}
@@ -643,7 +643,7 @@ export function SettingsView() {
               const id = `group-${Date.now()}`
               setTariffGroups([
                 ...tariffGroups,
-                { id, name: "New Period", startHour: 0, endHour: 0, rate: 0, color: "slate" },
+                { id, name: "New Period", slots: [{ startHour: 0, endHour: 0 }], rate: 0, color: "slate" },
               ])
               setTariffSaved(false)
             }}
