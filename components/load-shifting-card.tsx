@@ -18,7 +18,6 @@ import {
   isOffPeakHour,
   getTariffGroups,
   getTariffSlots,
-  getRateForHour,
   getTariffForHour,
   getCurrencySettings,
   getExportPrice,
@@ -152,7 +151,8 @@ function analyzeLoadShifting(
     const battPower = toKW(entry.batteryPower, entry.batteryPowerStr || unitFallback, (entry.batteryPowerPec ?? sharedPec) as string | undefined)
     const solarPower = toKW(entry.pac, entry.pacStr, entry.pacPec)
     const loadPower = toKW(entry.familyLoadPower, entry.familyLoadPowerStr || unitFallback, (entry.familyLoadPowerPec ?? sharedPec) as string | undefined)
-    const rate = getRateForHour(hour, tariffGroups)
+    const matchedGroup = getTariffForHour(hour, tariffGroups)
+    const rate = matchedGroup?.rate || 0
 
     // Solis convention: negative pSum = importing from grid, positive = exporting
     const gi = gridPower < 0 ? Math.abs(gridPower) * intervalHours : 0
@@ -172,7 +172,6 @@ function analyzeLoadShifting(
     rawBattDischargeWeighted += bd * rate
 
     // Per-tariff-group
-    const matchedGroup = getTariffForHour(hour, tariffGroups)
     if (matchedGroup) {
       const acc = groupRaw.get(matchedGroup.id)!
       acc.gridImport += gi
