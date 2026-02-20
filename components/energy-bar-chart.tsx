@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import {
   Bar,
   BarChart,
@@ -47,15 +47,21 @@ export function EnergyBarChart({ data, xLabel }: EnergyBarChartProps) {
   }
 
   // Determine which series have data
-  const available = new Set<SeriesKey>()
-  available.add("energy") // always show generation
-  for (const d of data) {
-    if ((d.gridSell || 0) > 0) available.add("gridSell")
-    if ((d.gridPurchased || 0) > 0) available.add("gridPurchased")
-    if ((d.homeLoad || 0) > 0) available.add("homeLoad")
-    if ((d.batteryCharge || 0) > 0) available.add("batteryCharge")
-    if ((d.batteryDischarge || 0) > 0) available.add("batteryDischarge")
-  }
+  const available = useMemo(() => {
+    const set = new Set<SeriesKey>()
+    set.add("energy") // always show generation
+    const MAX_SERIES = 6 // total keys in SERIES
+
+    for (const d of data) {
+      if (set.size === MAX_SERIES) break
+      if ((d.gridSell || 0) > 0) set.add("gridSell")
+      if ((d.gridPurchased || 0) > 0) set.add("gridPurchased")
+      if ((d.homeLoad || 0) > 0) set.add("homeLoad")
+      if ((d.batteryCharge || 0) > 0) set.add("batteryCharge")
+      if ((d.batteryDischarge || 0) > 0) set.add("batteryDischarge")
+    }
+    return set
+  }, [data])
 
   const toggleSeries = (key: SeriesKey) => {
     setHidden((prev) => {
