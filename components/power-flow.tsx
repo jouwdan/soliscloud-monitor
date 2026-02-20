@@ -2,13 +2,8 @@
 
 import type { InverterDetail } from "@/lib/solis-client"
 import { Sun, Home, Zap, Battery } from "lucide-react"
+import { BATTERY_COLOR, GRID_COLOR, HOME_COLOR, PV_STRING_COLOR, SOLAR_COLOR } from "@/lib/constants"
 
-/* ─── constants ─── */
-const SOLAR_COLOR = "#f59e0b" // amber-500
-const GRID_COLOR = "#6b7280"  // gray-500
-const HOME_COLOR = "#3b82f6"  // blue-500
-const BATTERY_COLOR = "#22c55e" // green-500
-const PV_STRING_COLOR = "#fbbf24" // amber-400
 
 /* Dot size */
 const DOT_R = 3
