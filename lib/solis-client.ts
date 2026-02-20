@@ -153,21 +153,11 @@ export function saveTariffGroups(groups: TariffGroup[]) {
   localStorage.setItem(STORAGE_KEY_TARIFF_GROUPS, JSON.stringify(groups))
 }
 
-export function isOffPeakHour(hour: number, settings?: OffPeakSettings): boolean {
+export function isOffPeakHour(hour: number, groups?: TariffGroup[]): boolean {
   // Use the persisted tariff groups (which include the off-peak flags from the UI)
-  const groups = getTariffGroups()
-  const matched = getTariffForHour(hour, groups)
-  if (matched) return matched.isOffPeak === true
-  
-  // Legacy fallback for backwards compatibility
-  if (settings) {
-    if (settings.startHour > settings.endHour) {
-      return hour >= settings.startHour || hour < settings.endHour
-    }
-    return hour >= settings.startHour && hour < settings.endHour
-  }
-  
-  return false
+  const effectiveGroups = groups || getTariffGroups()
+  const matched = getTariffForHour(hour, effectiveGroups)
+  return matched?.isOffPeak === true
 }
 
 function slotContainsHour(slot: TariffTimeSlot, hour: number): boolean {
