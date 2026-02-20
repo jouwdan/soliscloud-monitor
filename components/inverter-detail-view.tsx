@@ -365,7 +365,7 @@ export function InverterDetailView({ id, sn }: InverterDetailViewProps) {
                           let tH = 0, wS = 0
                           for (const g of tariffGroups) {
                             if (g.rate <= 0) continue
-                            const sl = g.slots?.length ? g.slots : [{ startHour: g.startHour, endHour: g.endHour }]
+                            const sl = g.slots
                             let h = 0
                             for (const s of sl) h += s.endHour > s.startHour ? s.endHour - s.startHour : (24 - s.startHour) + s.endHour
                             if (h > 0) { wS += g.rate * h; tH += h }
