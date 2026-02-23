@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { solisApiCall } from "@/lib/solis-api"
+import { SolisRequestSchema } from "@/lib/solis-api-schema"
 
 /**
  * Resolve credentials: request headers first, then env vars.
@@ -31,16 +32,25 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const { endpoint, body } = await request.json()
+    const json = await request.json()
+    const result = SolisRequestSchema.safeParse(json)
 
-    if (!endpoint || typeof endpoint !== "string") {
+    if (!result.success) {
+      console.error("[Solis API Proxy] Validation Failed:", JSON.stringify(result.error.format()))
       return NextResponse.json(
-        { error: "Missing or invalid endpoint" },
+        {
+          error: "Invalid request parameters",
+          details: result.error.format(),
+        },
         { status: 400 }
       )
     }
 
-    const data = await solisApiCall(endpoint, body || {}, creds)
+    const { endpoint, body } = result.data
+
+    // solisApiCall expects body as Record<string, unknown>, which our schema satisfies (mostly)
+    // We cast to any or Record<string, unknown> if TS complains, but it should be fine as it's structurally compatible.
+    const data = await solisApiCall(endpoint, body as Record<string, unknown>, creds)
     return NextResponse.json({ data })
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error"
