@@ -78,9 +78,6 @@ export interface OffPeakSettings {
   startHour: number
   endHour: number
   tariffGroups: TariffGroup[]
-  /** @deprecated kept for backwards compat reading */
-  peakRate: number
-  offpeakRate: number
 }
 
 const STORAGE_KEY_OFFPEAK = "solis_offpeak_settings"
@@ -100,8 +97,6 @@ export function getOffPeakSettings(): OffPeakSettings {
     startHour: 23,
     endHour: 8,
     tariffGroups: DEFAULT_TARIFF_GROUPS,
-    peakRate: 0,
-    offpeakRate: 0,
   }
   if (typeof window === "undefined") return defaults
   try {
