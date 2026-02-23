@@ -132,7 +132,7 @@ function analyzeLoadShifting(
     if (ts > 0 && ts < 1e12) ts = ts * 1000
     const date = new Date(ts)
     const hour = date.getHours()
-    const offPeak = isOffPeakHour(hour, settings)
+    const offPeak = isOffPeakHour(hour, tariffGroups)
 
     let intervalHours = 5 / 60
     if (i > 0) {
@@ -239,7 +239,7 @@ function analyzeLoadShifting(
   const totalGridCost = tariffBreakdown.reduce((sum, b) => sum + b.cost, 0)
   // Compute off-peak / peak grid cost from tariff breakdown
   const offPeakGridCost = tariffBreakdown.reduce((sum, b) => {
-    const isOp = isOffPeakHour(b.group.slots?.[0]?.startHour ?? b.group.startHour, settings)
+    const isOp = b.group.isOffPeak === true
     return sum + (isOp ? b.cost : 0)
   }, 0)
   const peakGridCost = totalGridCost - offPeakGridCost
